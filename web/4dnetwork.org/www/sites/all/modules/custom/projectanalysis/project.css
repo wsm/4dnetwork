@@ -1,0 +1,30 @@
+
+#analysis_equation {
+}
+
+#del_goals, #interest, #probability, #timeliness, #advantage, 
+#externality, #enabling, #time, #money {
+color: red;
+font-size: 120%;
+}
+
+#weighting {
+color: black;
+font-size: 130%;
+background: #dddddd;
+}
+
+.private_project {
+background: red;
+}
+
+.public_project {
+background: #99DD77;
+}
+
+#edit-del-goals, #edit-interest, #edit-probability, #edit-timeliness,
+#edit-advantage, #edit-enabling, #edit-externality, #edit-time, #edit-money {
+width: 40px;
+}
+
+

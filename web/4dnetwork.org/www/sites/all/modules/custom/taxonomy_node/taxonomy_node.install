@@ -1,0 +1,37 @@
+<?php
+/* $Id: taxonomy_node.install,v 1.0 2008/04/04 15:35:37 StickyTouch.com Exp $ */
+
+function taxonomy_node_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      db_query("CREATE TABLE IF NOT EXISTS {taxonomy_node} (
+        id int(10) unsigned NOT NULL auto_increment,
+        uid int(10) unsigned NOT NULL default '0',
+        term_id int(10) unsigned NOT NULL default '0',
+        node_id int(10) unsigned NOT NULL default '0',
+        personal int(10) unsigned NOT NULL default '0',
+        private int(10) unsigned NOT NULL default '0',
+        PRIMARY KEY (id),
+        KEY term_id (term_id))");
+      break;
+    case 'pgsql': // TODO: can someone check this PostgreSQL query?
+      db_query("CREATE TABLE {taxonomy_node} (
+        id int(10) unsigned NOT NULL auto_increment,
+        uid int(10) unsigned NOT NULL default '0',
+        term_id int(10) unsigned NOT NULL default '0',
+        node_id int(10) unsigned NOT NULL default '0',
+        personal int(10) unsigned NOT NULL default '0',
+        private int(10) unsigned NOT NULL default '0',
+        PRIMARY KEY (id)
+        )");
+      db_query("CREATE INDEX term_idx ON {taxonomy_node} (term_id)");
+      break;
+  }
+
+  // Ensure this module weighs lower the Taxonomy module...
+  $weight = db_result(db_query("SELECT weight FROM {system} WHERE name = 'taxonomy'"));
+  db_query("UPDATE {system} SET weight = %d WHERE name  = '%s'", $weight + 1, 'taxonomy_node');
+}
+
+

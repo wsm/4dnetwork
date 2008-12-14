@@ -1,0 +1,33 @@
+<?php
+/* $Id: node_section.install,v 1.0 2008/04/09 1:25:39 StickyTouch.com Exp $ */
+
+function node_section_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      db_query("CREATE TABLE IF NOT EXISTS {node_sections} (
+        sid int(10) unsigned NOT NULL default '0',
+        nid int(10) unsigned NOT NULL default '0',
+        weight int(10) unsigned NOT NULL default '0',
+        anchor varchar(255) NOT NULL default '',
+        PRIMARY KEY (sid),
+        KEY nid (nid))");
+      break;
+    case 'pgsql': // TODO: can someone check this PostgreSQL query?
+      db_query("CREATE TABLE {node_sections} (
+        sid int(10) unsigned NOT NULL default '0',
+        nid int(10) unsigned NOT NULL default '0',
+        weight int(10) unsigned NOT NULL default '0',
+        anchor varchar(255) NOT NULL default '',
+        PRIMARY KEY (sid)
+        )");
+      db_query("CREATE INDEX nidx ON {node_sections} (nid)");
+      break;
+  }
+
+//   // Ensure this module weighs lower the Node module...
+//   $weight = db_result(db_query("SELECT weight FROM {system} WHERE name = 'node'"));
+//   db_query("UPDATE {system} SET weight = %d WHERE name  = '%s'", $weight + 1, 'node_section');
+}
+
+

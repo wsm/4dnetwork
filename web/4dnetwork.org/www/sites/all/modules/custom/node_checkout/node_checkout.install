@@ -1,0 +1,9 @@
+<?php
+/* $Id: node_checkout.install,v 1.0 2008/04/08 18:33:45 StickyTouch.com Exp $ */
+
+function node_checkout_install() {
+  
+  // Ensure this module weighs lower the node_lock.module...
+  $weight = db_result(db_query("SELECT weight FROM {system} WHERE name = 'node_lock'"));
+  db_query("UPDATE {system} SET weight = %d WHERE name  = '%s'", $weight + 1, 'node_checkout');
+}

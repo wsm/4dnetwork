@@ -1,0 +1,53 @@
+<?php
+// $Id: 
+
+function fourDnet_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      db_query("CREATE TABLE IF NOT EXISTS {node_4dnetwork} (
+        id int(10) unsigned NOT NULL auto_increment,
+        oid int(10) unsigned NOT NULL default '0',
+        otype varchar(32) NOT NULL default '',
+        pgtype varchar(64) NOT NULL default '',
+        pgid int(10) unsigned NOT NULL default '0',
+        personal int(10) unsigned NOT NULL default '0',
+        private int(10) unsigned NOT NULL default '0',
+        PRIMARY KEY  (id),
+        KEY oid (oid),
+        KEY otype (otype),
+        KEY pgid (pgid))");
+      break;
+    case 'pgsql':
+      db_query("CREATE TABLE {node_4dnetwork} (
+        id int(10) unsigned NOT NULL auto_increment,
+        oid int(10) unsigned NOT NULL default '0',
+        otype varchar(32) NOT NULL default '',
+        pgtype varchar(64) NOT NULL default '',
+        pgid int(10) unsigned NOT NULL default '0',
+        personal int(10) unsigned NOT NULL default '0',
+        private int(10) unsigned NOT NULL default '0',
+        PRIMARY KEY  (id),
+        KEY oid (oid),
+        KEY otype (otype),
+        KEY pgid (pgid))");
+      break;
+  }
+
+  // Ensure the module runs after the Taxonomy and OG modules!
+  $weight = db_result(db_query("SELECT weight FROM {system} WHERE name = 'taxonomy'"));
+  $weight = max($weight, db_result(db_query("SELECT weight FROM {system} WHERE name = 'og'")));
+  db_query("UPDATE {system} SET weight = %d WHERE name  = '%s'", $weight + 1, 'fourDnet');
+
+
+  drupal_set_message('4D Network module installed');
+
+  // Install the postfix setups...
+  include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-postfix.inc');
+  if( _fourDnet_install_postfix() ){
+   drupal_set_message('4D Network Postfix bridge setup complete');
+   }
+  
+}
+
+

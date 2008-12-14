@@ -1,0 +1,30 @@
+<?php
+/* $Id: node_lock.install,v 1.0 2008/04/07 16:05:52 StickyTouch.com Exp $ */
+
+function node_lock_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+      db_query("CREATE TABLE IF NOT EXISTS {node_lock} (
+        vid int(10) unsigned NOT NULL default '0',
+        locked int(10) NOT NULL default '0',
+        lock_uid int(10) unsigned NOT NULL default '0',
+        lock_log varchar(255) NOT NULL default '',
+        PRIMARY KEY (vid)
+        )");
+      break;
+    case 'pgsql': // TODO: can someone check this PostgreSQL query?
+      db_query("CREATE TABLE IF NOT EXISTS {node_lock} (
+        vid int(10) unsigned NOT NULL default '0',
+        locked int(10) NOT NULL default '0',
+        lock_uid int(10) unsigned NOT NULL default '0',
+        lock_log varchar(255) NOT NULL default '',
+        PRIMARY KEY (vid)
+        )");
+      break;
+  }
+  
+  // Ensure this module weighs lower than the node.module...
+  $weight = db_result(db_query("SELECT weight FROM {system} WHERE name = 'node'"));
+  db_query("UPDATE {system} SET weight = %d WHERE name  = '%s'", $weight + 1, 'node_lock');
+}

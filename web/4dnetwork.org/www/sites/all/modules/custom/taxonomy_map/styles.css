@@ -1,0 +1,86 @@
+
+
+/*---------- taxonomy_map ----------*/
+
+.taxonomy-map, .node-list{
+	padding:0px;
+	margin:0px;
+	background:transparent none repeat scroll 0%;
+	background:transparent url('icons/break_vert.png') repeat-y scroll 20px 0px;
+}
+.taxonomy-map li .taxonomy-map, .taxonomy-map li .node-list{
+	padding:0px;
+	margin:0px;
+	background:transparent none repeat scroll 0%;
+	background:transparent url('icons/break_vert.png') repeat-y scroll 25px 0px;
+}
+.taxonomy-map ul, .node-list ul{
+/* 	background:transparent url('icons/break_vert.png') repeat-y scroll 20px 0px; */
+}
+/* .taxonomy-map .node-item a{ */
+/* 	padding-left:16px; */
+/* 	background:transparent url('icons/link_overlay.png') no-repeat scroll 1px 2px; */
+/* } */
+
+.taxonomy-map li{
+	margin:0px;
+	padding:2px 0px 2px 15px;
+	list-style-type:none;
+	list-style-position:outside;
+	list-style-image:none;
+	background:transparent none repeat scroll 0%;
+}
+.taxonomy-map .node-item{
+	padding:2px 0px 2px 20px;
+}
+.taxonomy-map li .taxonomy-map li{
+	padding:2px 0px 2px 20px;
+}
+.taxonomy-map ul li{
+/* 	background:transparent url('icons/break_hori.png') no-repeat scroll 23px 9px; */
+	background:transparent url('icons/break_hori.png') no-repeat scroll 28px 9px;
+}
+.taxonomy-map li ul{
+}
+.taxonomy-map li ul li{
+}
+
+.taxonomy-map .map-category{
+/* 	background:transparent url('icons/folder.png') no-repeat scroll 1px 1px; */
+/* 	padding-left:22px; */
+	background:transparent url('icons/folder.png') no-repeat scroll 4px 1px;
+	padding-left:25px;
+}
+.taxonomy-map .map-category-add-goal{
+	font-size:0.9em;
+}
+.taxonomy-map .map-category-add-project{
+	font-size:0.9em;
+}
+
+.taxonomy-map .map-node{
+	background:transparent url('icons/node-plain.png') no-repeat scroll 23px 1px;
+/* 	padding:2px 0px 2px 38px; */
+	padding:2px 0px 2px 43px;
+}
+
+.taxonomy-map-expander{
+/* 	width:16px; */
+	width:20px;
+	height:16px;
+	display:block;
+	float:left;
+	background:transparent none repeat scroll 0%;
+}
+.taxonomy-map-expanded{
+/* 	background:transparent url('icons/collapse.gif') no-repeat scroll 6px 5px; */
+	background:transparent url('icons/collapse.gif') no-repeat scroll 5px 4px;
+}
+.taxonomy-map-collapsed{
+/* 	background:transparent url('icons/expand.gif') no-repeat scroll 6px 5px; */
+	background:transparent url('icons/expand.gif') no-repeat scroll 5px 4px;
+}
+
+
+
+

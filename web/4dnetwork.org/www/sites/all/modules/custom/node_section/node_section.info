@@ -1,0 +1,9 @@
+; $Id: node_section.info,v 1.0 2008/04/09 1:25:39 StickyTouch.com Exp $
+name = "Node Sections"
+description = "This module provides node sections for more Wiki like editing."
+version = "5.x-1.x-dev"
+;dependencies = 
+
+package = "Node"
+project = "node_section"
+datestamp = "1207718739"

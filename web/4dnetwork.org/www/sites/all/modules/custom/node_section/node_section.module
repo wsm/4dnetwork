@@ -1,0 +1,297 @@
+<?php
+/* $Id: node_section.module,v 1.0 2008/04/09 1:25:39 StickyTouch.com Exp $ */
+/**
+ * @file
+ *
+ * This module provides node sections for more Wiki like editing.
+ */
+
+ include_once(drupal_get_path('module', 'node_section') .'/node_section-block.inc');
+ include_once(drupal_get_path('module', 'node_section') .'/node_section-content.inc');
+ 
+ // ----- Admin Utils ---- //
+function node_section_is_admin() {
+  global $user;
+  return ($user->uid == 1);
+}
+
+function node_section_debug($msg) {
+  if( node_section_is_admin() ){
+   drupal_set_message($msg);
+   }
+}
+ 
+
+/**
+ * Implementation of hook_menu()
+ */
+function node_section_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    /* -------------------------- admin menu item ---------------------- */
+    $items[] = array(
+      'access'             => user_access('administer content types'),
+      'callback'           => 'drupal_get_form',
+      'callback arguments' => array('node_section_settings'),
+      'description'        => t('Configure Node Sections options.'),
+      'path'               => 'admin/settings/node_section',
+      'title'              => t('Node Sections'),
+    );
+   }
+  else{
+
+
+    // To avoid SQL overhead, check whether we are on a node page and whether the
+    // user is allowed to create node sections.
+    if( arg(0) == 'node' && is_numeric(arg(1)) && user_access('create node sections') ) {
+     if( _node_section_show_section_tab() ) {
+      // Only add the Section-tab for node_section pages:
+      $node = db_fetch_object(db_query("SELECT n.nid, n.type FROM {node} n WHERE n.nid = %d", arg(1)) );
+      //$node = node_load(arg(1));
+      
+      if( _node_section_enabled($node) ) {
+        //$sectionTypes = _node_section_get_section_types();
+        //$type = node_get_types('type', $sectionTypes[0]);
+        $type = _node_section_get_section_type_default();
+        $type = str_replace('_', '-', $type->type);
+        $items[] = array(
+          'path' => 'node/'. arg(1) .'/section/'. arg(1),
+          'title' => t('Add Section'),
+          'callback' => 'node_add',
+          'callback arguments' => array($type),
+          'access' => node_access('update', $node),
+          'type' => MENU_LOCAL_TASK,
+          'weight' => 2);
+      }
+     
+     }
+    }
+   }
+  return $items;
+}
+
+
+/* Internal helper funtion for #node_section_settings() */
+function _node_section_clean_types(&$allTypes, $occupied) {
+  // Remove the Project Tree types from the options...
+  foreach( $occupied as $key=>$type ){
+    unset($allTypes[$type]);
+    }
+  return $allTypes;
+}
+
+/**
+ * Configures the various node_section options; system_settings_form().
+ */
+function node_section_settings() {
+  $form = array();
+  
+  $node_types = node_get_types('names');
+  $section_types = _node_section_get_section_types();
+  
+  // Remove the Node Sections types from the options...
+  $allowed_types = $node_types;
+  $allowed_types = _node_section_clean_types($allowed_types, $section_types);
+  $form['node_section_general']['node_section_types'] = array(
+    '#type'          => 'checkboxes',
+    '#multiple'      => true,
+    '#required'      => true,
+    '#options'       => $allowed_types,
+    '#default_value' => _node_section_get_enabled_types(),
+    '#title'         => t('Node Section content types'),
+    '#description'   => t('Select the node types that may contain Sections.'),
+  );
+  
+  $form['node_section_general']['node_section_show_tab'] = array(
+    '#type'          => 'radios',
+    '#multiple'      => false,
+    '#required'      => true,
+    '#options'       => array('0'=>'No', '1'=>'Yes'),
+    '#default_value' => _node_section_show_section_tab(),
+    '#title'         => t('Display the "Add Section" Tab on /node pages'),
+  );
+
+  return system_settings_form($form);
+}
+
+
+
+
+/**
+ * Are "Node Sections" enabled on this node type?
+ */
+function _node_section_show_section_tab() {
+  return variable_get('node_section_show_tab', 1);
+}
+
+
+ /* ------------------------------------------------------------- */
+
+/**
+ * Are "Node Sections" enabled on this node type?
+ */
+function _node_section_enabled($type) {
+  if( is_object($type) ) $type = $type->type;
+  return in_array($type, _node_section_get_enabled_types(), TRUE);
+}
+
+/**
+ * Gets a list of node types that have "Node Sections" enabled.
+ */
+function _node_section_get_enabled_types(){
+  static $tn_types;
+  if(!$tn_types){
+   $tn_types = array();
+   $types = variable_get('node_section_types', FALSE);
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $tn_types[] = $ison;
+       }
+      }
+    }
+   }
+  return $tn_types;
+}
+
+/**
+ * Is this a "Node Section" itself?
+ */
+function _node_section_is_section($type) {
+  return in_array($type, _node_section_get_section_types(), TRUE);
+}
+
+
+
+/**
+ * Gets the default "Node Section" type.
+ */
+function _node_section_get_section_type_default(){
+  $sectionTypes = _node_section_get_section_types();
+  $type = node_get_types('type', $sectionTypes[0]);
+//   $type = str_replace('_', '-', $type->type);
+  return $type;
+}
+
+/**
+ * Gets a list of node types that are "Node Sections" themselves.
+ */
+function _node_section_get_section_types(){
+  static $tn_types;
+  if(!$tn_types){
+   $tn_types = array();
+   $types = variable_get('node_section_type', array('node_section'=>'node_section') );
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $tn_types[] = $ison;
+       }
+      }
+    }
+   }
+  return $tn_types;
+}
+
+
+
+
+
+
+ /**
+  * Load all "Node Sections" for a node id
+  */
+function _node_section_get_node_sections_old($nid, $load=FALSE){
+  $sections = array();
+  $res = db_query('SELECT sid,anchor FROM {node_sections} WHERE nid = %d ORDER BY weight ASC', $nid);
+  while($node = db_fetch_object($res)) {
+    $sections[$node->anchor][$node->sid] = ($load) ? node_load($node->sid) : $node->sid;
+    }
+  return $sections;
+}
+function _node_section_get_node_sections($nid, $load=FALSE){
+  $sections = array();
+  $res = db_query('SELECT n.title, ns.sid, ns.anchor FROM {node_sections} ns INNER JOIN {node} n ON n.nid = ns.sid WHERE ns.nid = %d ORDER BY weight ASC', $nid);
+  while($node = db_fetch_object($res)) {
+    $sections[$node->anchor][$node->sid] = ($load) ? node_load($node->sid) : $node;
+    }
+  return $sections;
+}
+
+
+
+ /**
+  * Load the Parent Node for the given "Node Section"
+  */
+function _node_section_get_section_node($sid, $load=FALSE){
+  $res = db_fetch_object( db_query("SELECT nid FROM {node_sections} WHERE sid = %d", $sid) );
+  if($res->nid) {
+   return ($load) ? node_load($res->nid) : $res->nid;
+   }
+  return;
+}
+
+
+
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+function node_section_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+   
+  switch ($op) {
+    case 'view':
+     if( !$a3 && _node_section_enabled($node) && user_access('access node sections') ){
+      $sections = _node_section_get_node_sections($node->nid, FALSE);
+      if( !empty($sections) ){
+        $node->sections = $sections;
+       }
+      }
+    break;
+    case 'delete':
+      if( _node_section_enabled($node) ){
+       // Delete all Node Sections associated with this node...
+       db_query("DELETE FROM {node_sections} WHERE nid = %d", $node->nid);
+       }
+    break;
+   }
+   
+}
+
+
+function theme_node_sections(&$node){
+  $sections = &$node->sections;
+  $output = '';
+  if( is_array($sections) && !empty($sections) ){
+   // $node->sections = $sections;
+   foreach($sections as $anchor){
+     foreach($anchor as $sid=>$s){
+       $output .= theme('node_section', $sid);
+       }
+      }
+    }
+  return $output;
+}
+
+function theme_node_section($sid){
+  $node = node_load($sid);
+  
+  if( user_access('edit node sections') ){
+   $node->section_edit = l( t('Edit'), 'node/'.$node->nid.'/edit');
+   }
+  return node_view($node, FALSE, TRUE, FALSE);
+//   return node_view(node_load($sid), FALSE, TRUE, FALSE);
+}
+
+
+
+function node_section_get_title_anchor($title){
+  $title = strtolower( preg_replace('/[^a-zA-Z0-9\-]/is', '-', $title) );
+  return $title;
+}
+
+
+
+
+
+
+

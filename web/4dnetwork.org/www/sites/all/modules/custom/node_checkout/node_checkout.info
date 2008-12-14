@@ -1,0 +1,9 @@
+; $Id: node_checkout.info,v 1.0 2008/04/08 18:33:45 StickyTouch.com Exp $
+name = "Node Checkout"
+description = "This module provides a "check out" mechanism for same node editing by multiple users."
+version = "5.x-1.x-dev"
+dependencies = node_lock
+
+package = "Node"
+project = "node_lock"
+datestamp = "1207598733"

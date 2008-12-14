@@ -1,0 +1,90 @@
+/**********************************************
+ PROJECT ANALYSIS EQUATION
+ **********************************************/
+
+the project analysis equation is currently:
+
+W = GW (dG * I * P * T * A * Ex * En)/(Yr * $)
+
+where the parameters are defined as follows:
+
+GW [0,1] =  global weighting, a parameter to reflect the priority level of
+	    this project with respect to the collective high level
+	    strategy (note: strategy part of the site to be
+	    implemented in the future; for now this factor is not counted)
+dG [0,1] =  the incremental (delta) difference the project makes in achieving
+	    your goals
+I [0,1] =   your interest in doing the project
+P [0,1] =   the probability of the project succeeding
+T [0,1] =   the timeliness of the project (now versus later)
+A [0,1] =   your comparative advantage in working on the project
+	    (skills you bring, would it get done without you, etc.)
+Ex [0,1] =  externalities (social, environmental). 
+En [0,1] =  the enabling role that this project will have for other
+	    projects or for your skillset, experience, or contacts
+	    (which in turn contributes to your ability to better
+	    implement future projects)
+HH [yrs] =  estimated time needed to implement the project
+$ [$] =     estimated money needed to implement the project
+W [1/] =   the final weighting of the project, as calculated from the
+	    above values. 
+
+
+/**********************************************
+ DATA STRUCTURES
+ **********************************************/
+
+the project analysis module implements a new database table with the
+following information (in addition to the standard node information
+such author, comments, last updated times, etc.
+
+note that the 'project name' and 'decscription' fields make use of the
+standard node 'title' and 'body' fields respectively. these listed
+below are additional:
+
+table: projectanalysis
+FIELD NAME            	DATA TYPE
+----------------------|----------
+summary			TEXT
+global_weighting	DOUBLE
+del_goals		DOUBLE
+interest		DOUBLE
+probability		DOUBLE
+timeliness		DOUBLE
+advantage		DOUBLE
+externality		DOUBLE
+enabling		DOUBLE
+time			DOUBLE
+money			DOUBLE
+weighting		DOUBLE
+
+/**********************************************
+ Structure of a "Create Project" Node:
+ **********************************************/
+
+Project Name ('title')
+Summary
+Description ('body)
+Project Analysis Parameters
+
+
+/**********************************************
+ Project Listing Pages
+ **********************************************/
+
+### ALL PUBLIC PROJECTS #####
+
+the module implements a custom page that lists all public projects (if
+you are familiar with the views module, this is essentially a custom view for a
+the custom module, since the views module does not let you work with
+the custom fields of custom modules, alas). 
+
+this page is accessible at http://example.com/?q=projects (or just
+/projects if you have clean URLs enabled). you may want to add this to
+either a menu somewhere or, probably, as a primary link. 
+
+### MY PROJECTS  #####
+
+the module also implements a homepage for each user to view all their
+own projects, public and private. 
+(insert more here...)

@@ -1,0 +1,9 @@
+; $Id: fourD_analysis.info,v 1.0 2008/05/09 15:17:33 StickyTouch.com Exp $
+name = "4dNetwork Project Analysis"
+description = "This module provides Project Analysis for 4dnetwork.org"
+version = "5.x-0.8"
+dependencies = fourDnet taxonomy_node
+
+package = "4DNetwork"
+project = "fourD_analysis"
+datestamp = "1210360653"

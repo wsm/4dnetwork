@@ -1,0 +1,4 @@
+; $Id$
+name = Project Analysis System
+description = Creates a system for assessing the relative weighting of the value of projects based on a given set of parameters.  
+version = "$Name$"

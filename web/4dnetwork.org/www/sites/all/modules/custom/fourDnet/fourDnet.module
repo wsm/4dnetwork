@@ -1,0 +1,874 @@
+<?php
+/* $Id: fourDnet.module,v 1.2.2.4 2008/03/15 07:42:26 stickytouch Exp $ */
+/**
+ * @file
+ *
+ * This module provides additional functionality for 4DNetwork.org sites
+ */
+
+ include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-user.inc');
+ include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-blocks.inc');
+ include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-content.inc');
+ include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-sections.inc');
+ include_once(drupal_get_path('module', 'fourDnet') .'/fourDnet-postfix.inc');
+ 
+ // ----- Utils ---- //
+function fourDnet_is_admin() {
+  global $user;
+  return ($user->uid == 1);
+}
+
+function fourDnet_debug($msg) {
+  if( fourDnet_is_admin() ){
+   drupal_set_message($msg);
+   }
+}
+ // ----- Utils ---- //
+
+
+
+/**
+ * Implementation of hook_menu()
+ */
+function fourDnet_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    /* -------------------------- admin menu item ---------------------- */
+    $items[] = array(
+       'access'             => user_access('administer content types'),
+       'callback'           => 'drupal_get_form',
+       'callback arguments' => array('fourDnet_settings'),
+       'description'        => t('Configure 4DNetwork module options.'),
+       'path'               => 'admin/settings/4dnetwork',
+       'title'              => t('4DNetwork'),
+       );
+   }
+  else{
+   
+   /*   Customize the Tabs on Project pages  */
+   if( arg(0) == 'node' && is_numeric(arg(1)) ){
+    $node = node_load(arg(1));
+    if( $node->nid && _fourDnet_is_project_group_type($node->type) ){
+     
+     $items[] = array('path' => 'node/'. $node->nid .'/faces',
+        'title' => t('Members'),
+        'callback' => 'og_menu_check',
+        'callback arguments' => array('og_list_users_faces_page', $node->nid),
+         //'access' => node_access('view', $node),
+        'weight' => 3,
+        'type' => MENU_LOCAL_TASK
+        );
+     
+     $items[] = array('path' => 'node/'. $node->nid .'/invite-friend',
+        'title' => t('Invite friend'),
+        'callback' => 'og_menu_check',
+        'callback arguments' => array('og_invite_page', $node->nid),
+         //'access' => node_access('view', $node),
+        'weight' => 4,
+        'type' => MENU_LOCAL_TASK
+        );
+     
+     if( module_exists('og_forum')  ){
+      $gforum  = og_forum_get_forum_container($node->nid);
+      if( $gforum ){
+       $items[] = array('path' => 'node/'. arg(1) .'/project-forum',
+          'title' => t('Forum'),
+          'callback' => 'drupal_goto',
+          'callback arguments' => array('forum/'.$gforum),
+           //'access' => node_access('view', $node),
+          'weight' => 5,
+          'type' => MENU_LOCAL_TASK
+          );
+       
+       $items[] = array('path' => 'node/'. arg(1) .'/project-forum-add',
+          'title' => t('Add Wiki page'),
+          'callback' => 'drupal_goto',
+          'callback arguments' => array('node/add/forum/'.$gforum),
+           //'access' => node_access('view', $node),
+          'weight' => 6,
+          'type' => MENU_LOCAL_TASK
+          );
+       }
+      }
+     
+     $items[] = array('path' => 'node/'. arg(1) .'/my-subscription',
+        'title' => t('My subscription'),
+        'callback' => 'og_menu_check',
+        'callback arguments' => array('og_manage', $node->nid),
+         //'access' => node_access('view', $node),
+        'weight' => 7,
+        'type' => MENU_LOCAL_TASK
+        );
+     
+     
+     
+     }
+    }
+   
+   }
+  
+  return $items;
+}
+
+
+
+
+
+
+/* Internal helper funtion for #fourDnet_settings() */
+function _fourDnet_clean_types(&$allTypes, $occupied) {
+  // Remove the Project Tree types from the options...
+  foreach( $occupied as $key=>$type ){
+    unset($allTypes[$type]);
+    }
+  
+  unset($allTypes['project_group']); // Always hide the main project_group type
+  return $allTypes;
+}
+
+/**
+ * Configures the various fourDnet options; system_settings_form().
+ */
+function fourDnet_settings() {
+  $form = array();
+  
+  $form['fourdnet_general']['fourdnet_project_tree_vocabs'] = array(
+    '#type' => 'select',
+    '#title' => t('Project Tree Vocabulary'),
+    '#options' => _fourDnet_get_vocab_select_options(),
+    '#default_value' => _fourDnet_get_project_tree_vocabs(),
+    '#multiple' => false,
+    '#required' => true
+  );
+  
+   $avail_roots = array();
+   $goal_tree_vid = _fourDnet_get_project_tree_vocabs();
+   $roots = taxonomy_get_tree($goal_tree_vid, 0, -1, 1);
+   foreach( $roots as $term ) {
+     $avail_roots[$term->tid] = check_plain($term->name);
+     }
+   $form['fourdnet_general']['fourdnet_personal_goal_root'] = array(
+     '#type'          => 'select',
+     '#title'         => t('Personal Goal/Project root category'),
+     '#multiple'      => false,
+     '#options'       => $avail_roots,
+     '#default_value' => _fourD_analysis_get_personal_goal_root(),
+     '#description'   => t('Select the root catgory for all Personal Goals &amp; Projects.'),
+   );
+  
+  
+  $node_types = node_get_types('names');
+  $topic_node_types   = _fourDnet_get_project_topic_node_types();
+  
+  $topic_types = $node_types;
+  // Remove the Project Tree types from the options...
+  _fourDnet_clean_types($topic_types, array());
+  $form['fourdnet_general']['fourdnet_project_topic_node_types'] = array(
+    '#type'          => 'checkboxes',
+    '#title'         => t('Project Topic node types'),
+    '#multiple'      => false,
+    '#options'       => $topic_types,
+    '#default_value' => $topic_node_types,
+    '#description'   => t('Select the node types that will be considered Open Projects pages (open topics & discussions associated with a Project).  Generally you would only select one type here.'),
+  );
+
+  // Add the Template settings for Project & Goal wikis.
+  $form['fourdnet_general']['fourdnet_project_template'] = array(
+    '#type' => 'textarea',
+    '#title' => 'Project Wiki Template',
+    '#default_value' => _fourDnet_get_project_wiki_sections_raw(),
+    '#required' => FALSE,
+    '#rows' => 20,
+    '#description'   => t('Enter the Wiki template for new Projects. <strong>Format:</strong><br />#section: Unique section key (machine-readable: alphanumeric and - hyphens only)<br />#Title: The title of the Section<br />#Description: A description of the Section<br />'),
+  );
+  $form['fourdnet_general']['fourdnet_goal_template'] = array(
+    '#type' => 'textarea',
+    '#title' => 'Goal Wiki Template',
+    '#default_value' => _fourDnet_get_goal_wiki_sections_raw(),
+    '#required' => FALSE,
+    '#rows' => 20,
+    '#description'   => t('Enter the Wiki template for new Goals. <strong>Format:</strong><br />#section: Unique section key (machine-readable: alphanumeric and - hyphens only)<br />#Title: The title of the Section<br />#Description: A description of the Section<br />'),
+  );
+  
+  return system_settings_form($form);
+}
+
+function _fourDnet_get_vocab_select_options(){
+  $ret = array();
+  $vocabs = taxonomy_get_vocabularies();
+  if($vocabs) {
+   foreach ($vocabs as $vocab) {
+     $ret[$vocab->vid] = check_plain($vocab->name);
+     }
+    }
+  return $ret;
+}
+
+
+
+
+
+
+
+/**
+ * Called from _phptemplate_variables, this function 
+ * looks at whether we are on a forum page/post/comment and 
+ * adds variables to the $vars array that will be available
+ * to node-type.tpl.php.
+ */ 
+
+function fourDnet_addvars($hook, $vars) {
+ // fourDnet_debug('fourDnet_addvars: '.$hook.'; '.implode($vars));
+   
+   if ($hook == 'comment') {
+    _fourDnet_addvars_comment($vars);
+    }
+   elseif( $hook == 'node' ) {
+    _fourDnet_addvars_node($vars);
+    }
+   elseif( $hook == 'page' ) {
+    _fourDnet_addvars_page($vars);
+    }
+  
+  return $vars;
+}
+
+
+function _fourDnet_addvars_comment(&$vars) {
+  return $vars;
+}
+
+function _fourDnet_addvars_page(&$vars) {
+  
+  /* Add the Project Overview, action plan, analysis pages
+   * to the project (which is really a Group homepage)...
+   */
+  if( arg(0) == 'node' && is_numeric(arg(1)) ){
+//    $node = node_load(arg(1));
+//    // ------------------------------------------
+//    // Project Group type...
+//    if( _fourDnet_is_project_group_type($node->type) ){
+//     }
+   }
+   
+  return $vars;
+}
+
+function _fourDnet_addvars_node(&$vars) {
+  return $vars;
+}
+
+
+
+
+ /* ------------------------------------------------------------- */
+
+/**
+ * Is the given $type assigned to be a "Project" (piggy-back off of OG groups here)
+ */
+function _fourDnet_is_project_group_type($type) {
+  return ( module_exists('og') && og_is_group_type($type) );
+}
+
+
+
+
+
+/**
+ * Returns the vocabulary id for Goal Tree navigation.
+ */
+function _fourDnet_get_project_tree_vocabs() {
+  $vids = variable_get('fourdnet_project_tree_vocabs', '');
+  if (empty($vids)) {
+    // Check to see if a forum vocabulary exists
+    $vid = db_result(db_query("SELECT vid FROM {vocabulary} WHERE module = '%s'", 'fourDnet'));
+    if (!$vid) {
+      // Create the Goal Tree vocabulary.
+      $edit = array('name' => t('Goal Tree'), 'multiple' => 1, 'required' => 1, 'hierarchy' => 2, 'relations' => 0, 'module' => 'fourDnet', 'weight' => 0, 'nodes' => array('project_tree_page' => 1));
+      taxonomy_save_vocabulary($edit);
+      $vid = $edit['vid'];
+     }
+   variable_set('fourdnet_project_tree_vocabs', $vid);
+   $vids = variable_get('fourdnet_project_tree_vocabs', '');
+   }
+  return $vids;
+}
+
+
+
+/**
+ * Is the given $vid assigned to be the "Project Tree Vocabulary"
+ * - ie: all Projects are classified under this taxonomy Vocabulary.
+ */
+function _fourDnet_is_project_tree_vocab($vid){
+  return ( $vid == _fourDnet_get_project_tree_vocabs() );
+}
+
+/** personal_goal_root -
+  * All "personal" goals and projects must be placed under this top-level term in the Goal Tree category.
+  */
+//   --- Moved to fourDnet module
+function _fourD_analysis_get_personal_goal_root() {
+  return variable_get('fourdnet_personal_goal_root', 0);
+}
+
+
+/**
+ * Is the given $type assigned to be a "Project Topic-Page"
+ * - ie: open topics / discussions for each Project
+ */
+function _fourDnet_is_project_topic_node_type($type) {
+  return in_array($type, _fourDnet_get_project_topic_node_types(), TRUE);
+}
+
+
+/**
+ * Gets a list of node types configured as "Project Topic Pages".
+ * That is, Project can have open topics / discussions.
+ */
+function _fourDnet_get_project_topic_node_types(){
+  static $pn_types;
+  if(!$pn_types){
+  $pn_types = array();
+   $types = variable_get('fourdnet_project_topic_node_types', array('project_topic'=>'project_topic'));
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $pn_types[] = $ison;
+       }
+      }
+     }
+   }
+  return $pn_types;
+}
+
+
+
+
+
+
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function fourDnet_form_alter($form_id, &$form) {
+//   fourDnet_debug('form_alter; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+  
+  if ($form_id == 'user_register') {
+   // @see: fourDnet-user.inc file
+   _fourDnet_user_registration_form_alter($form_id, $form);
+   }
+  
+  /*  Add the default text for Goal/Project templates */
+  else if ($form_id == 'node_section_node_form') {
+   _fourDnet_section_node_form_alter($form_id, $form);
+   }
+  
+  else if( isset($form['#id']) && $form['#id'] == 'node-form' && isset($form['type']['#value']) ) {
+   
+    // -----------------------------------------------------------------------
+    // Project Group Node type...
+    if ( _fourDnet_is_project_group_type( $form['type']['#value'] ) ) {
+     _fourDnet_form_alter_project_group_node($form_id, $form);
+     
+//      // Pre-select the taxonomy term if provided...
+//      if( is_numeric(3) ){
+//       $vid = _fourDnet_get_project_tree_vocabs();
+//       $term = taxonomy_get_term(is_numeric(3));
+//       fourDnet_debug('form_alter; $vid: '. print_r($vid, TRUE) );
+//       fourDnet_debug('form_alter; $term: '. print_r($term, TRUE) );
+//       $typed_term_tid = NULL; // tid match, if any.
+// //        foreach ($terms as $possibility) {
+// //           fourDnet_debug('form_alter; -- '. print_r($possibility->vid,true).' == '. print_r($vids, TRUE) );
+//          if ($term->vid == $vid) {
+//           fourDnet_debug('form_alter; $possibility: '. print_r($term, TRUE) );
+// //           $taxo = new stdClass();
+// //           $taxo->tid = $term->tid;
+// //           $taxo->vid = $term->vid;
+// //           $taxo->name = $term->name;
+// //           $taxo->description = $term->description;
+// //           $form['#node']->taxonomy[$term->tid] = $taxo;
+// //           $form['#parameters'][1]->taxonomy[$term->tid] = $taxo;
+// 
+// 
+//           $taxo = new stdClass();
+//           $taxo->tid = 36;
+//           $taxo->vid = 2;
+//           $taxo->name = 'Goal Test level 4';
+//           $taxo->description = '';
+//           $form['#node']->taxonomy[$term->tid] = $taxo;
+//           $form['#parameters'][1]->taxonomy[$term->tid] = $taxo;
+// 
+//           $taxo = new stdClass();
+//           $taxo->tid = 1;
+//           $taxo->vid = 2;
+//           $taxo->name = 'Environmental Sustainability';
+//           $taxo->description = '';
+//           $form['#node']->taxonomy[2] = $taxo;
+//           $form['#parameters'][1]->taxonomy[2] = $taxo;
+// 
+// 
+//          }
+//       fourDnet_debug('form_alter; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+// //        }
+//       }
+     }
+    
+    // -----------------------------------------------------------------------
+    // Goal Node type...
+    if ( module_exists('taxonomy_node') && _taxonomy_node_is_content_type( $form['type']['#value'] ) ) {
+     _fourDnet_form_alter_goal_node($form_id, $form);
+     }
+    
+    // -----------------------------------------------------------------------
+    // Project Topic Node type...
+    if ( _fourDnet_is_project_topic_node_type( $form['type']['#value'] ) ) {
+     _fourDnet_form_alter_project_topic_node($form_id, $form);
+     }
+    
+  }
+}
+
+
+
+/**
+ * Implementation of hook_form_alter()- Alters the form for Project Topic Nodes
+ */
+function _fourDnet_form_alter_project_topic_node($form_id, &$form) {
+  // fourDnet_debug('form_alter_project_topic_node; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+  
+     // Editing a node, we don't alter the form...
+     if( $form['nid']['#value'] ){
+      return;
+      }
+     
+     // Cache the parent Project ID - fourDnet module style linking
+     if( arg(3) && is_numeric(arg(3)) ){
+      $parent = arg(3);
+      }
+
+     // Cache the parent Project ID - OG module GET (?gids[]=XX) style linking
+     else if( isset($_GET['gids']) && is_numeric($_GET['gids'][0]) ){
+      $parent = $_GET['gids'][0];
+      }
+
+     // Cache the parent Project ID - Last resort, look for the ID in the form...
+     else if( isset($form['og_nodeapi']['visible']['og_groups']['#default_value'][0]) ){
+      $parent = $form['og_nodeapi']['visible']['og_groups']['#default_value'][0];
+      }
+     
+     // Now Remove the Audience selector box from the OG module.
+     unset( $form['og_nodeapi'] );
+     
+     // Make sure have a linked Project ID (parent)
+     if( !$parent && !is_numeric($parent) ){
+      drupal_set_message('Warning: Not linked to a Project!');
+      }
+     else{
+      $node = node_load( $parent );
+      if( !$node || !_fourDnet_is_project_group_type($node->type) ){
+       drupal_set_message('Warning: Linked Project Not Found!');
+       }
+      else{
+        drupal_set_title( t('Submit Project @type', array('@type'=>'Topic')) );
+        $form['4d_nodeapi']['fourD_parent'] = array(
+           '#type'  => 'hidden',
+           '#id'    => '4d-parent-project',
+           '#name'  => 'fourD_parent',
+           '#value' => $node->nid
+           );
+        $form['4d_nodeapi']['fourD_type'] = array(
+           '#type'  => 'hidden',
+           '#id'    => '4d-type',
+           '#name'  => 'fourD_type',
+           '#value' => 'topic'
+           );
+        }
+      }
+}
+
+
+
+
+
+/**
+ * Implementation of hook_form_alter() - Alters the form for Goal Nodes
+ */
+function _fourDnet_form_alter_goal_node($form_id, &$form) {
+//   fourDnet_debug('form_alter_goal_node; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+  
+  /*  Remove the node body from the form all-together  */
+  unset( $form['body_filter'] );
+}
+
+/**
+ * Implementation of hook_form_alter() - Alters the form for Project/Group Nodes
+ */
+function _fourDnet_form_alter_project_group_node($form_id, &$form) {
+//   fourDnet_debug('form_alter_project_group_node; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+  
+  
+  /*  Tweak a few labels here for "Project" instead of "Group"  */
+  
+  $form['og_description']['#description'] = 'A brief description for the project details block and the group directory.';
+  
+  $form['og_selective']['#title'] = 'Subscription requests';
+  $form['og_selective']['#description'] = 'How should subscription requests be handled in this project? When you select <em>closed</em>, users will not be able to subscribe <strong>or</strong> unsubscribe.';
+  
+  $form['og_directory']['#title'] = 'List in projects directory';
+  $form['og_directory']['#description'] = 'Should this project appear on the <a href="/og">list of projects page</a>?  Disabled if the project is set to <em>private project</em>.';
+  
+//   $form['og_private']['#title'] = 'Private project';
+//   $form['og_private']['#description'] = 'Should this project be visible only by its subscribers?  Disabled if the project is set to <em>List in Directory</em> or <em>Subscription requests: open</em>';
+  
+  
+  /*  Remove the node body from the form all-together  */
+  unset( $form['body_filter'] );
+  
+}
+
+
+
+/**
+ * Implementation of hook_form_alter() - Alters the form to include default text from Project/Group Templates
+ */
+function _fourDnet_section_node_form_alter($form_id, &$form) {
+   // fourDnet_debug('_fourDnet_section_node_form_alter;  #type: '.$form['node_section']['node_section_parent_type']['#value']. ';  #anchor: '.$form['node_section']['node_section_anchor']['#value'] );
+
+   /*  Project node  */
+   if( _fourDnet_is_project_group_type( $form['node_section']['node_section_parent_type']['#value'] ) ) {
+    $section = _fourDnet_get_project_wiki_section( $form['node_section']['node_section_anchor']['#value'] );
+    if( $section && is_array($section) ){
+     /*  Apply the default section title  */
+     if( $form['title']['#default_value'] == '' ){
+      $form['title']['#default_value'] = $section['title'];
+      }
+     
+     /*  Apply the default section body  */
+     if( $form['body_filter']['body']['#default_value'] == '' ){
+      $form['body_filter']['body']['#default_value'] = $section['description'];
+      }
+     }
+    }
+   
+   /*  Goal node  */
+   if( module_exists('taxonomy_node') &&
+       _taxonomy_node_is_content_type( $form['node_section']['node_section_parent_type']['#value'] )
+    ) {
+    $section = _fourDnet_get_goal_wiki_section( $form['node_section']['node_section_anchor']['#value'] );
+    if( $section && is_array($section) ){
+     /*  Apply the default section title  */
+     if( $form['title']['#default_value'] == '' ){
+      $form['title']['#default_value'] = $section['title'];
+      }
+     
+     /*  Apply the default section body  */
+     if( $form['body_filter']['body']['#default_value'] == '' ){
+      $form['body_filter']['body']['#default_value'] = $section['description'];
+      }
+     }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * Implementation of hook_nodeapi()
+ */
+function fourDnet_nodeapi(&$node, $op, $teaser) {
+   global $user;
+   switch ($op) {
+    case 'validate':
+       //fourDnet_debug('node: '.print_r($node, TRUE));
+       
+       // Editing a node, we don't alter the node references...
+       if( !$node->nid ){
+        
+        // ------------------------------------------
+        // Project Page Node type...
+        if( _fourDnet_is_project_topic_node_type($node->type) ) {
+         if( !$node->fourD_parent ){
+          form_set_error('fourD_parent', 'Not linked to a Project!');
+          }
+         elseif( !$node->fourD_type ){
+          form_set_error('fourD_type', 'Invalid Project Page Type!');
+          }
+         }
+        
+        }
+      
+       /*  Force all Personal Goal & Projects be placed under the "Personal" root category in Goal Tree. */
+       if( $node->is_personal == 1 ){
+        
+        // Get the Goal Tree taxonomy ...
+        $vid = _fourDnet_get_project_tree_vocabs();
+        $pid = _fourD_analysis_get_personal_goal_root();
+        
+        //fourDnet_debug('$vid: '.print_r($vid, TRUE). '; $pid: '.print_r($pid, TRUE). '; node: '.print_r($node, TRUE));
+        $term = 0;
+        /* Get the taxonomy term for Project types */
+        if( _fourDnet_is_project_group_type($node->type) ) {
+         /* Taxonomy does not allow multiple select */
+         if( isset($node->taxonomy[$vid]) && is_numeric($node->taxonomy[$vid]) ) {
+          $term = taxonomy_get_term($node->taxonomy[$vid]);
+          }
+         /* Taxonomy allows multiple select */
+         if( isset($node->taxonomy[$vid]) && is_array($node->taxonomy[$vid]) && is_numeric($node->taxonomy[$vid][0]) ) {
+          $term = taxonomy_get_term($node->taxonomy[$vid][0]);
+          }
+         }
+        
+        /* Get the taxonomy term for Goal types */
+        elseif( module_exists('taxonomy_node') && _taxonomy_node_is_content_type($node->type) ){
+         /* Taxonomy does not allow multiple select */
+         if( isset($node->taxonomy_parent[$vid]) && is_numeric($node->taxonomy_parent[$vid]) ){
+          $term = taxonomy_get_term($node->taxonomy_parent[$vid]);
+          }
+         /* Taxonomy allows multiple select */
+         if( isset($node->taxonomy_parent[$vid]) && is_array($node->taxonomy_parent[$vid]) && is_numeric($node->taxonomy_parent[$vid][0]) ) {
+          $term = taxonomy_get_term($node->taxonomy_parent[$vid][0]);
+          }
+         }
+        
+        $catOK = 0;
+        //fourDnet_debug('$term: '.print_r($term, TRUE));
+        if( $term ){
+         $parents = taxonomy_get_parents_all($term->tid);
+         foreach( $parents as $p ) {
+           //fourDnet_debug('$parent: '.print_r($p, TRUE));
+           if( $p->tid == $pid ) {
+            $catOK = 1;
+            }
+           }
+         }
+        
+        if( !$catOK ){
+         form_set_error('taxonomy', 'Please categorize your Personal Projects under the <em>Personal Category</em>.');
+         }
+        }
+       elseif( $node->is_private == 1 && $node->is_personal != 1 ){
+        if( _fourDnet_is_project_group_type($node->type) ) {
+         form_set_error('is_private', 'Please set as <em>Personal</em> if you wish to enable the <em>Privacy</em> option on this Project.');
+         }
+        elseif( module_exists('taxonomy_node') && _taxonomy_node_is_content_type($node->type) ){
+         form_set_error('is_private', 'Please set as <em>Personal</em> if you wish to enable the <em>Privacy</em> option on this Goal.');
+         }
+        }
+        //form_set_error('taxonomy', 'Stop test');
+      break;
+    case 'submit':
+       if( _fourDnet_is_project_group_type($node->type) ) {
+        /* Call og_submit_group to perform og submit step, after og_groups has been applied */
+        $node->og_groups[$node->fourD_parent] = $node->fourD_parent;
+        og_submit_group($node);
+        }
+      break;
+     case 'view':
+       // ------------------------------------------
+       // Project Group type...
+       if( _fourDnet_is_project_group_type($node->type) ) {
+        
+        if( !_fourDnet_project_group_access_node_privacy($node) ){
+         // fourDnet_debug('fourDnet_nodeapi(); $op: '.$op.'; $a3: '.$a3.'; $a4: '.$a4.'; N/A');
+         
+         drupal_not_found();
+         // Allow modules to react to the end of the page request before redirecting.
+         // We do not want this while running update.php.
+         module_invoke_all('exit');
+         
+         // Even though session_write_close() is registered as a shutdown function, we
+         // need all session data written to the database before redirecting.
+         session_write_close();
+         
+         // The "Location" header sends a redirect status code to the HTTP daemon. In
+         // some cases this can be wrong, so we make sure none of the code below the
+         // drupal_goto() call gets executed upon redirection.
+         exit();
+         }
+        }
+     break;
+//      case 'load':
+//      break;
+     case 'update':
+       
+       // ------------------------------------------
+       // Project Group type...
+       if( _fourDnet_is_project_group_type($node->type) ) {
+        /*  Enforce Personal/Private  */
+        if( !user_access('create personal projects') ){
+         $node->is_personal = 0;
+         $node->is_private = 0;
+         }
+        if( !user_access('create private projects') ){
+         $node->is_private = 0;
+         }
+        if( $node->is_private == 1 && $node->is_personal != 1 ){
+         $node->is_private = 0;
+         }
+        
+        /*  Backwards compatibility - add record for old Goals & Projects */
+        $exists = db_fetch_object(db_query("SELECT * FROM {node_4dnetwork} WHERE oid = '%d' AND otype = 'priv'", $node->nid));
+        if( !$exists->oid ){
+         $node_query = "INSERT INTO {node_4dnetwork} (id,oid,otype,pgtype,pgid,personal,private) VALUES ('NULL', '%d', '%s', '%s', '%d', '%d', '%d')";
+         db_query($node_query, $node->nid, 'priv', '', 0, $node->is_personal, $node->is_private );
+         }
+        
+        $node_query = "UPDATE {node_4dnetwork} SET personal = '%d', private = '%d' WHERE oid = '%d'";
+        db_query($node_query, $node->is_personal, $node->is_private, $node->nid );
+        
+        /*  Update OG */
+        if( module_exists('og') ){
+         $node->og_private = $node->is_private;
+         $node_query = "UPDATE {og} SET private = '%d' WHERE nid = '%d'";
+         db_query($node_query, $node->is_private, $node->nid );
+         }
+        }
+       
+     break;
+     case 'insert':
+       // fourDnet_debug('node:insert '.print_r($node, TRUE));
+       
+       // ------------------------------------------
+       // Project Group type...
+       if( _fourDnet_is_project_group_type($node->type) ) {
+        /*  Enforce Personal/Private  */
+        if( !user_access('create personal projects') ){
+         $node->is_personal = 0;
+         $node->is_private = 0;
+         }
+        if( !user_access('create private projects') ){
+         $node->is_private = 0;
+         }
+        if( $node->is_private == 1 && $node->is_personal != 1 ){
+         $node->is_private = 0;
+         }
+        $node->og_private = $node->is_private;
+        
+        $node_query = "INSERT INTO {node_4dnetwork} (id,oid,otype,pgtype,pgid,personal,private) VALUES ('NULL', '%d', '%s', '%s', '%d', '%d', '%d')";
+        db_query($node_query, $node->nid, 'priv', '', 0, $node->is_personal, $node->is_private );
+        
+        /*  Update OG */
+        if( module_exists('og') ){
+         $node->og_private = $node->is_private;
+         $node_query = "UPDATE {og} SET private = '%d' WHERE nid = '%d'";
+         db_query($node_query, $node->is_private, $node->nid );
+         }
+        }
+       
+       // ------------------------------------------
+       // Project Page Node type...
+       elseif( _fourDnet_is_project_topic_node_type($node->type) ) {
+        if( $node->fourD_parent ){
+         $node_query = "INSERT INTO {node_4dnetwork} (id,oid,otype,pgtype,pgid) VALUES ('NULL', '%d', '%s', '%s', '%d')";
+         db_query($node_query, $node->fourD_parent, 'node', $node->fourD_type, $node->nid );
+         }
+        }
+       
+     break;
+    case 'delete':
+      db_query("DELETE FROM {node_4dnetwork} WHERE oid = %d AND otype = '%s'", $node->nid, 'node');
+      break;
+     }
+}
+
+
+
+
+
+
+/**
+ * Override the default theme for Paorject Tree node
+ */
+// function phptemplate_site_map_node_list($result) {
+//   
+//   $project_type = 'project_group';
+//   
+//   $out = '';
+//   while ($node = db_fetch_object($result)) {
+//    $out .= '<li class="node-item">'. l($node->title, 'node/'. $node->nid, array('class'=>'map-node node-'.$node->type ) )</li>'."\n";
+//    }
+//   if( $out != '' ){
+//    $out = '<ul class="node-list" style="display:none;">'.$out;
+//    $out .= '</ul>'."\n";
+//    }
+//   return $out;
+// }
+
+
+
+/**
+ * Theme the Taxonomy Term
+ *
+ * $vars['term']          - The Taxonomy Term Object
+ * $vars['children']      - Optional Child elements
+ * $vars['icon-feed']     - Optional Path to Feed Icon
+ */
+function x_phptemplate_site_map_term($vars) {
+  $out = '';
+  if( $vars['term'] ) {
+   $out .= '<li>';
+   if( !is_null($vars['icon-collapse']) ){
+    $alt = 'Expand / Collapse';
+    $out .= '<a href="#" class="taxonomy-map-expander" title="'.$alt.'"> </a>';
+    }
+   if( !is_null($vars['icon-feed']) ){
+    $alt = check_plain($vars['term']->name).' RSS Feed';
+    $out .= l(' <img src="'.$vars['icon-feed'].'" alt="'.$alt.'" title="'.$alt.'"></img> ', 'taxonomy/term/'.$vars['term']->tid.'/0/feed', array(), NULL, NULL, TRUE, TRUE );
+    }
+//    $out .= l(t($vars['term']->name), 'taxonomy/term/'.$vars['term']->tid, array('class'=>'map-category')) . ' <span class="map-category-add-project">('.l(t('add'), 'node/add/project-group/'.$vars['term']->tid, array('class'=>'map-category-add-project', 'title'=>'Add a new Project under '.t($vars['term']->name) ) ).')<span>';
+   $out .= $vars['children'];
+   $out .= l(t($vars['term']->name), 'taxonomy/term/'.$vars['term']->tid, array('class'=>'map-category'));
+   $out .= $vars['children'];
+
+   // Add the node titles, if they exist...
+   if( !is_null($vars['term']->nodes) && $vars['term']->nodes != '' ){
+//     $out .= '<li>'.$vars['term']->nodes.'</li>';
+    $out .= $vars['term']->nodes;
+    }
+   $out .= '</li>'."\n";
+   }
+  return $out;
+}
+
+
+function phptemplate_site_map_term($vars) {
+  $out = '';
+  if( $vars['term'] ) {
+   $out .= '<li>';
+   if( !is_null($vars['icon-collapse']) ){
+    $alt = 'Expand / Collapse';
+    $out .= '<a href="#" class="taxonomy-map-expander" title="'.$alt.'"> </a>';
+    }
+   if( !is_null($vars['icon-feed']) ){
+    $alt = check_plain($vars['term']->name).' RSS Feed';
+    $out .= l(' <img src="'.$vars['icon-feed'].'" alt="'.$alt.'" title="'.$alt.'"></img> ', 'taxonomy/term/'.$vars['term']->tid.'/0/feed', array(), NULL, NULL, TRUE, TRUE );
+    }
+//    $out .= l(t($vars['term']->name), 'taxonomy/term/'.$vars['term']->tid, array('class'=>'map-category'));
+   $out .= l(t($vars['term']->name), 'taxonomy/term/'.$vars['term']->tid, array('class'=>'map-category')) .
+           ' <span class="map-category-add-goal">('.t('add').' ' .
+           l(t('goal'), 'node/add/term-node/'.$vars['term']->vid.'/'.$vars['term']->tid, array('class'=>'map-category-add-project', 'title'=>'Add a new Goal under '.t($vars['term']->name) ) ) .
+           ', ' .
+           l(t('project'), 'node/add/project-group/'.$vars['term']->tid, array('class'=>'map-category-add-project', 'title'=>'Add a new Project under '.t($vars['term']->name) ) ) .
+           ')</span>';
+   $out .= $vars['children'];
+
+   // Add the node titles, if they exist...
+   if( !is_null($vars['term']->nodes) && $vars['term']->nodes != '' ){
+//     $out .= '<li>'.$vars['term']->nodes.'</li>';
+    $out .= $vars['term']->nodes;
+    }
+   $out .= '</li>'."\n";
+   }
+  return $out;
+}

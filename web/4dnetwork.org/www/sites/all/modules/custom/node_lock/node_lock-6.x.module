@@ -1,0 +1,272 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Allow locking of nodes. Locked nodes can only be edited (and unlocked)
+ * by users with the 'lock content' permission.
+ * Note: Users with the 'administer nodes' permission can always edit nodes.
+ */
+
+/**
+ * Implementation of hook_perm().
+ */
+function node_lock_perm() {
+  return array('lock content');
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function node_lock_menu() {
+  $items = array();
+  $items['node/%node/lock'] = array(
+    'title' => 'Lock',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('node_lock_lock_confirm', 1),
+    'access callback' => '_node_lock_can_lock',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['node/%node/unlock'] = array(
+    'title' => 'Unlock',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('node_lock_unlock_confirm', 1),
+    'access callback' => '_node_lock_can_unlock',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_menu_alter().
+ */
+function node_lock_menu_alter(&$callbacks) {
+  $callbacks['node/%node/edit']['access callback'] = '_node_lock_access';
+  $callbacks['node/%node/delete']['access callback'] = '_node_lock_access';
+  if (module_exists('trash')) {
+    $callbacks['node/%node/trash']['access callback'] = '_node_lock_access';
+    $callbacks['node/%node/trash']['access arguments'] = array('delete', 1);
+  }
+}
+
+/**
+ * Access callback for lock tab.
+ */
+function _node_lock_can_lock($node) {
+  return user_access('lock content') && !$node->locked;
+}
+
+/**
+ * Access callback for unlock tab.
+ */
+function _node_lock_can_unlock($node) {
+  return user_access('lock content') && $node->locked;
+}
+
+/**
+ * Access callback for node update and deletion.
+ */
+function _node_lock_access($op, $node) {
+  if ($node->locked && !(user_access('lock content') || user_access('administer nodes'))) {
+    return FALSE;
+  }
+  return node_access($op, $node);
+}
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function node_lock_form_alter(&$form, $form_state, $form_id) {
+  if ($form['#id'] == 'node-form' && user_access('lock content')) {
+    // Node edit form
+    $form['access_control'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Access control'),
+    );
+    $form['access_control']['locked'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Lock update/delete'),
+      '#description' => t('Check if update and deletion of this page should be locked.'),
+      '#default_value' => isset($form['#node']->locked) ? $form['#node']->locked : FALSE,
+    );
+  }
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ *
+ * - "delete", "insert", and "update":
+ * The module must track the access status of the node.
+ */
+function node_lock_nodeapi(&$node, $op, $arg = 0) {
+  switch ($op) {
+    case 'load':
+      $result = db_fetch_object(db_query('SELECT * FROM {node_lock} WHERE vid = %d', $node->vid));
+      $node->locked = $result->locked ? TRUE : FALSE;
+      break;
+    case 'delete':
+      db_query('DELETE FROM {node_lock} WHERE vid = %d', $node->vid);
+      break;
+    case 'insert':
+      if (user_access('lock content')) {
+        node_lock_set_lock_status($node);
+      }
+      break;
+    case 'update':
+      if (user_access('lock content')) {
+        node_lock_set_lock_status($node);
+      }
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_diff().
+ */
+function node_lock_diff(&$old_node, &$new_node) {
+  $result = array();
+  $old_lock = $old_node->locked ? t('Locked') : t('Unlocked');
+  $new_lock = $new_node->locked ? t('Locked') : t('Unlocked');
+  $result[] = array(
+    'name' => t('Lock status'),
+    'old' => array($old_lock),
+    'new' => array($new_lock),
+    'format' => array(
+      'show_header' => FALSE,
+    )
+  );
+  return $result; 
+}
+
+/**
+ * Lock node $node.
+ * This creates a new revision with the given log message.
+ */
+function node_lock_lock($node, $log_message = NULL) {
+  if (!$log_message) {
+    $log_message = t('Locked');
+  }
+  $node->locked = TRUE;
+  $node->revision = TRUE;
+  $node->log = $log_message;
+  node_save($node);
+}
+
+/**
+ * Unlock node $node.
+ * This creates a new revision with the given log message.
+ */
+function node_lock_unlock($node, $log_message = NULL) {
+  if (!$log_message) {
+    $log_message = t('Unlocked');
+  }
+  $node->locked = FALSE;
+  $node->revision = TRUE;
+  $node->log = $log_message;
+  node_save($node);
+}
+
+/**
+ * Set locked status of a node.
+ * This sets the status of the latest revision of the node and does not create a new revision.
+ *
+ * @param $node
+ *   The node object or node id of the node whose status will be set.
+ * @param $locked
+ *   The locked flag. If this is omitted (or NULL) and the node is passed as an object, the 'locked' field is used.
+ */
+function node_lock_set_lock_status($node, $locked = NULL) {
+  // Sanitize arguments
+  if (is_object($node)) {
+    $vid = $node->nid;
+    if (is_null($locked) && isset($node->locked)) {
+      $locked = $node->locked;
+    }
+  }
+  else {
+    $vid = db_result(db_query('SELECT vid FROM {node} WHERE nid = %d', (int)$node));
+  }
+  // Convert $locked to booelan.
+  $locked = $locked ? TRUE : FALSE;
+
+  // Update datebase if necessary
+  if ($vid) {
+    if ($locked) {
+      $is_already_locked = db_result(db_query('SELECT COUNT(*) FROM {node_lock} WHERE vid = %d', $vid));
+      if (!$is_already_locked) {
+        db_query('INSERT INTO {node_lock} (vid, locked) VALUES (%d, %d)', $node->vid, TRUE);
+      }
+    }
+    else {
+      db_query('DELETE FROM {node_lock} WHERE vid = %d', $node->vid);
+    }
+  }
+}
+
+/**
+ * Menu callback to ask for locking confirmation.
+ */
+function node_lock_lock_confirm(&$form_state, $node) {
+  $form['nid'] = array(
+    '#type' => 'value',
+    '#value' => $node->nid,
+  );
+  $form['log'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Log message'),
+    '#default_value' => t('Locked'),
+    '#weight' => -1,
+  );
+  return confirm_form($form,
+    t('Are you sure you want to lock %title?', array('%title' => $node->title)),
+    isset($_GET['destination']) ? $_GET['destination'] : 'node/'. $node->nid,
+    t(''),
+    t('Lock'),
+    t('Cancel')
+  );
+}
+
+/**
+ * Submit handler for locking confirmation form.
+ */
+function node_lock_lock_confirm_submit($form, &$form_state) {
+  if ($form_state['values']['confirm']) {
+    node_lock_lock(node_load($form_state['values']['nid']), $form_state['values']['log']);
+  }
+  $form_state['redirect'] = 'node/'.$form_state['values']['nid'];
+}
+
+/**
+ * Menu callback to ask for unlocking confirmation.
+ */
+function node_lock_unlock_confirm(&$form_state, $node) {
+  $form['nid'] = array(
+    '#type' => 'value',
+    '#value' => $node->nid,
+  );
+  $form['log'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Log message'),
+    '#default_value' => t('Unlocked'),
+    '#weight' => -1,
+  );
+  return confirm_form($form,
+    t('Are you sure you want to unlock %title?', array('%title' => $node->title)),
+    isset($_GET['destination']) ? $_GET['destination'] : 'node/'. $node->nid,
+    t(''),
+    t('Unlock'),
+    t('Cancel')
+  );
+}
+
+/**
+ * Submit handler for unlocking confirmation form.
+ */
+function node_lock_unlock_confirm_submit($form, &$form_state) {
+  if ($form_state['values']['confirm']) {
+    node_lock_unlock(node_load($form_state['values']['nid']), $form_state['values']['log']);
+  }
+  $form_state['redirect'] = 'node/'.$form_state['values']['nid'];
+}

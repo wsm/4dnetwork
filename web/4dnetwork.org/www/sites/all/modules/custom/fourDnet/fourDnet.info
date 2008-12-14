@@ -1,0 +1,10 @@
+; $Id $
+name = "4Dnetwork.org"
+description = "This module provides additional functionality for the 4dnetwork.org."
+version = "5.x-1.x-beta1"
+dependencies = node_section
+
+package = "4DNetwork"
+project = "fourDnet"
+datestamp = "1205237737"
+

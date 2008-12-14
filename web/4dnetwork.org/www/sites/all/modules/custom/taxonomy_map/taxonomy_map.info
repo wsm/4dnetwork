@@ -1,0 +1,9 @@
+; $Id: taxonomy_map.info,v 1.0 2008/03/08 06:37:27 stickytouch.com Exp $
+name = "Taxonomy Map"
+description = "This module provides a collapsible taxonomy map."
+version = "5.x-1.x-dev"
+dependencies = taxonomy
+
+package = "Taxonomy"
+project = "taxonomy_map"
+datestamp = "1204976247"

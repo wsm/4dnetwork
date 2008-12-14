@@ -1,0 +1,4 @@
+; $Id$
+name = Mission forge
+description = "Shows crowd-sourcing appeals from Mission Forge"
+version = 5.x-0.1

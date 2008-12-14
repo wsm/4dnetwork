@@ -1,0 +1,647 @@
+<?php
+/* $Id: fourD_analysis.module,v 1.0 2008/05/09 15:17:33 StickyTouch.com Exp $ */
+/**
+ * @file
+ *
+ * This module provides Project Analysis for 4dnetwork.org.
+ */
+
+ include_once(drupal_get_path('module', 'fourD_analysis') .'/fourD_analysis-lib.inc');
+ include_once(drupal_get_path('module', 'fourD_analysis') .'/fourD_analysis-project-form.inc');
+ include_once(drupal_get_path('module', 'fourD_analysis') .'/fourD_analysis-project-lib.inc');
+ include_once(drupal_get_path('module', 'fourD_analysis') .'/fourD_analysis-goal-lib.inc');
+
+ // ----- Utils ---- //
+function fourD_analysis_is_admin() {
+  global $user;
+  return ($user->uid == 1);
+}
+
+function fourD_analysis_debug($msg) {
+  if( fourD_analysis_is_admin() ){
+   drupal_set_message($msg);
+   }
+}
+ // ----- Utils ---- //
+
+
+/**
+ * Implementation of hook_perm().
+ * @return array
+ */
+function fourD_analysis_perm() {
+  return array(
+          'access analysis',
+          'access analytics',
+          'submit goal analysis',
+          'submit project analysis'
+          );
+}
+
+/**
+ * Implementation of hook_menu()
+ */
+function fourD_analysis_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    /* -------------------------- admin menu item ---------------------- */
+    $items[] = array(
+      'access'             => user_access('administer content types'),
+      'callback'           => 'drupal_get_form',
+      'callback arguments' => array('fourD_analysis_settings'),
+      'description'        => t('Configure 4DNetwork module options.'),
+      'path'               => 'admin/settings/4danalysis',
+      'title'              => t('4DNetwork Analysis'),
+    );
+    
+    /* -------------------------- project menu items ---------------------- */
+   }
+  else{
+    /* -------------------------- project menu items ---------------------- */
+    $items[] = array(
+      'path'               => 'project',
+      'title'              => t('Projects'),
+      'access'             => user_access('access analysis'),
+      'callback'           => 'fourD_analysis_show_projects',
+      'callback arguments' => ( (is_numeric(arg(1))) ? array(array('nid'=>arg(1))) : array() ),
+      'type'               => MENU_CALLBACK
+    );
+//     global $user;
+//     $items[] = array(
+//       'path'               => 'user/'.$user->uid.'/projects',
+//       'title'              => t('Projects'),
+//       'access'             => user_access('access analysis'),
+//       'callback'           => 'fourD_analysis_show_projects',
+//       'callback arguments' => array(array('uid'=>$user->uid, 'name'=>$user->name)),
+//       'type'               => MENU_LOCAL_TASK
+//     );
+    if( arg(0) == 'user' && is_numeric(arg(1)) ){ // 2008-07-09
+     $user = user_load( array('uid'=>arg(1)) );
+     if( $user && isset($user->uid) ){
+      $items[] = array(
+        'path'               => 'user/'.$user->uid.'/projects',
+        'title'              => t('Projects'),
+        'access'             => user_access('access analysis'),
+        'callback'           => 'fourD_analysis_show_projects',
+        'callback arguments' => array(array('uid'=>$user->uid, 'name'=>$user->name)),
+        'type'               => MENU_LOCAL_TASK
+       );
+      }
+     }
+   }
+  
+  return $items;
+}
+
+
+/**
+ * Configures the analysis options; system_settings_form().
+ */
+function fourD_analysis_settings() {
+  $form = array();
+  
+  $node_types = node_get_types('names');
+  $goal_types = _fourD_analysis_get_goal_node_types();
+  $project_types = _fourD_analysis_get_project_node_types();
+  
+  $avail_types = $goal_types;
+  foreach( $goal_types as $key=>$type ){
+    unset($avail_types[$type]);
+    }
+  $form['fourd_analysis']['fourd_analysis_goal_node_types'] = array(
+    '#type'          => 'checkboxes',
+    '#title'         => t('Goal Analysis node types'),
+    '#multiple'      => false,
+    '#options'       => $node_types,
+    '#default_value' => $avail_types,
+    '#description'   => t('Select the node types that will be considered for Goal Analysis.'),
+  );
+  
+  
+  $avail_types = $project_types;
+  foreach( $project_types as $key=>$type ){
+    unset($avail_types[$type]);
+    }
+  $form['fourd_analysis']['fourd_analysis_project_node_types'] = array(
+    '#type'          => 'checkboxes',
+    '#title'         => t('Project Analysis node types'),
+    '#multiple'      => false,
+    '#options'       => $node_types,
+    '#default_value' => $avail_types,
+    '#description'   => t('Select the node types that will be considered for Project Analysis.'),
+  );
+  
+//   --- Moved to fourDnet module
+//   if( module_exists('fourDnet') ){
+//    $avail_roots = array();
+//    $goal_tree_vid = _fourDnet_get_project_tree_vocabs();
+//    $roots = taxonomy_get_tree($goal_tree_vid, 0, -1, 1);
+//    foreach( $roots as $term ) {
+//      $avail_roots[$term->tid] = check_plain($term->name);
+//      }
+//    $form['fourd_analysis']['fourd_analysis_personal_goal_root'] = array(
+//      '#type'          => 'select',
+//      '#title'         => t('Personal Goal/Project root category'),
+//      '#multiple'      => false,
+//      '#options'       => $avail_roots,
+//      '#default_value' => _fourD_analysis_get_personal_goal_root(),
+//      '#description'   => t('Select the root catgory for all Personal Goals &amp; Projects.'),
+//    );
+//   }
+  
+  
+  $form['fourd_analysis']['fourd_analysis_goal_levels'] = array(
+    '#type'          => 'textfield',
+    '#title'         => t('Goal Analysis Depth'),
+    '#default_value' => _fourD_analysis_get_goal_depth(),
+    '#description'   => t('Enter the maximum depth of Goals that may be Weighted by each project. &nbsp;&nbsp; Examples:<br/ > <strong>-1</strong> = unlimited depth<br/ > <strong>1</strong> = Top level only<br/ > <strong>2</strong> = Level 2 and above<br/ > <strong>3</strong> = Level 3 and above <br /> ...and so on' ),
+//     '#description'   => t('Enter the maximum depth of Goals that may be Weighted by each project.<br />
+// Examples:'.theme('links', array(array('title'=>'<strong>-1</strong> = unlimited depth','html'=>1),array('title'=>'<strong>1</strong> = Top level','html'=>1),array('title'=>'<strong>3</strong> = Level 3 and above','html'=>1) ) ) ),
+  );
+  
+  $form['fourd_analysis']['fourd_analysis_column_info_nid'] = array(
+    '#type'          => 'textfield',
+    '#title'         => t('Project Analysis information node'),
+    '#default_value' => _fourD_analysis_get_column_info_nid(),
+    '#description'   => t('Enter the node ID of the node which describes for PA input fields. &nbsp;&nbsp; This node will be linked to from PA table headers to help describe the particular column.' ),
+  );
+  
+  return system_settings_form($form);
+}
+
+
+/** Get the column info/description node ID */
+function _fourD_analysis_get_column_info_nid() {
+  return variable_get('fourd_analysis_column_info_nid', 0);
+}
+
+
+/** max depth (in the Goal tree) of Goals considered for "Goal Weighting" */
+function _fourD_analysis_get_goal_depth() {
+  return variable_get('fourd_analysis_goal_levels', 1);
+}
+
+/**
+ * Is the given $type eligible for "Project Analysis"
+ */
+function _fourD_analysis_is_project_node_type($type) {
+  return in_array($type, _fourD_analysis_get_project_node_types(), TRUE);
+}
+
+
+/**
+ * Gets a list of node types configured as "Analysis Nodes".
+ */
+function _fourD_analysis_get_project_node_types(){
+  static $a_types;
+  if(!$a_types){
+  $a_types = array();
+   $types = variable_get('fourd_analysis_project_node_types', array());
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $a_types[] = $ison;
+       }
+      }
+     }
+   }
+  return $a_types;
+}
+
+
+/**
+ * Is the given $type eligible for "Project Analysis"
+ */
+function _fourD_analysis_is_goal_node_type($type) {
+  return in_array($type, _fourD_analysis_get_goal_node_types(), TRUE);
+}
+
+
+/**
+ * Gets a list of node types configured as "Analysis Nodes".
+ */
+function _fourD_analysis_get_goal_node_types(){
+  static $a_types;
+  if(!$a_types){
+  $a_types = array();
+   $types = variable_get('fourd_analysis_goal_node_types', array());
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $a_types[] = $ison;
+       }
+      }
+     }
+   }
+  return $a_types;
+}
+
+
+
+
+
+/**
+ * Implementation of hook_nodeapi()
+ */
+function fourD_analysis_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+  // fourD_analysis_debug('fourD_analysis_nodeapi; $op: ' .$op );
+
+//   fourD_analysis_debug('fourD_analysis_nodeapi; $op: ' .$op.';  $node: '.print_r($node, true).';  $form: '.print_r($a3, true) );
+  
+  // Node type is eligible for Goal Analysis...
+  if( _fourD_analysis_is_goal_node_type($node->type) ) {
+   // WAIT: We don't know if this is within the max_depth of Goals
+   // @see: fourD_analysis-goal-lib#_fourD_analysis_get_goal_depth();
+   // return;
+   // UPDATE: Piggy back off of taxonomy_node.module
+   //
+   /* Depends on taxonomy_node.module for $node->taxonomy_node_term_id */
+//    if( isset($node->taxonomy_node_term_id) && _fourD_analysis_get_goal($node->taxonomy_node_term_id) ){
+   if( isset($node->taxonomy_node_term_id) && _fourD_analysis_get_goal_by_term($node->taxonomy_node_term_id) ){
+    
+    global $user;
+    switch ($op) {
+     case 'load' :
+//        return db_fetch_array(db_query("SELECT * FROM {node_4dnetwork_analysis} a WHERE a.nid = %d", $node->nid ) );
+       break;
+     case 'view' :
+       if( $a4 ){
+        _fourD_analysis_goal_nodeview( $node );
+        }
+       break;
+     case 'validate' :
+        _fourD_analysis_goal_form_parts_validate( $a3['#post'] );
+       break;
+     case 'update' :
+       fourD_analysis_goal_entry_update_insert($user->uid, $node);
+       break;
+     case 'insert' :
+       fourD_analysis_goal_entry_insert( $user->uid, $node );
+       break;
+     case 'delete' :
+       fourD_analysis_goal_entry_delete( $node );
+       break;
+     }
+    }
+   }
+
+  // Node type is eligible for Project Analysis...
+  if( _fourD_analysis_is_project_node_type($node->type) ) {
+   
+   global $user;
+   switch ($op) {
+    case 'load' :
+//       return db_fetch_array(db_query("SELECT * FROM {node_4dnetwork_analysis} a WHERE a.nid = %d", $node->nid ) );
+      break;
+    case 'view' :
+      if( $a4 ){
+       _fourD_analysis_project_nodeview( $node );
+       drupal_set_breadcrumb( array(
+           l(t('Home'), 'node/'.$node->nid, array('title'=>t('Home')) ),
+           l(t('Projects'), 'project', array('title'=>t('Projects')) ),
+           // l(check_plain($node->title), 'node/'.$node->nid, array('title'=>check_plain($node->title)) )
+           check_plain($node->title)
+           ));
+       }
+      break;
+    case 'validate' :
+//       if( $node->nid ){  // Deprecated 2008-07-17; see hook_form_alter()
+//        $values = fourD_analysis_project_entry_get($node->nid, $user->uid);
+//        $parts = _fourD_analysis_project_form_parts($values);
+//        _fourD_analysis_project_form_parts_validate( $a3['#post'], $parts );
+//        }
+      break;
+    case 'submit' :
+      // fourD_analysis_debug('fourD_analysis_nodeapi; $op: ' .$op.';  $node: '.print_r($node, true).';  $form: '.print_r($a3, true).';  $a4: '.print_r($a4, true) );
+      break;
+
+    case 'update' :
+      // fourD_analysis_project_entry_update_insert($user->uid, $node); // Deprecated 2008-07-17; see hook_form_alter()
+      break;
+    case 'insert' :
+      // fourD_analysis_project_entry_insert( $user->uid, $node );
+      break;
+    case 'delete' :
+      fourD_analysis_project_entry_delete( $node );
+      break;
+    }
+  }
+
+
+
+}
+
+
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function fourD_analysis_form_alter($form_id, &$form) {
+ // fourD_analysis_debug('form_alter; $form_id: ' .$form_id .', #id: '.$form['#id']. '; #type: ' . $form['type']['#value'] .'; FORM: '. print_r($form, TRUE) );
+  
+  if( isset($form['#id']) && $form['#id'] == 'node-form' && isset($form['type']['#value']) ) {
+
+
+    // Is Goal Analysis Node type...
+    if ( _fourD_analysis_is_goal_node_type( $form['type']['#value'] ) ) {
+     // WAIT: We don't know if this is within the max_depth of Goals
+     // @see: fourD_analysis-goal-lib#_fourD_analysis_get_goal_depth();
+     // return;
+     // UPDATE: Piggy back off of taxonomy_node.module
+     /* Depends on taxonomy_node.module for $node->taxonomy_node_term_id */
+//      if( isset($form['#node']->taxonomy_node_term_id) && _fourD_analysis_get_goal($form['#node']->taxonomy_node_term_id) ){
+//      if( isset($form['#node']->taxonomy_node_term_id) && _fourD_analysis_get_goal($form['#node']->nid) ){
+     if( isset($form['#node']->taxonomy_node_term_id) && _fourD_analysis_get_goal_by_term($form['#node']->taxonomy_node_term_id) ){
+     
+      // Add our custom parts...
+      $values = array();
+      if( $form['nid']['#value'] ){
+       global $user;
+       $values = fourD_analysis_goal_entry_get($form['nid']['#value'], $user->uid);
+       }
+      
+      $parts = _fourD_analysis_goal_form_parts( $values );
+      // array_merge($form, $parts);
+      foreach($parts as $key=>$part){
+         $form[$key] = $part;
+         }
+      }
+     }
+
+    // Is Project Analysis Node type...
+    else if ( _fourD_analysis_is_project_node_type( $form['type']['#value'] ) ) {
+     
+     // This makes the node edit form a little confusing...
+     return; // 2008-07-17
+    
+     // Add our custom parts...
+     $values = array();
+     if( $form['nid']['#value'] ){
+      global $user;
+      $values = fourD_analysis_project_entry_get($form['nid']['#value'], $user->uid);
+      }
+     else{
+      return; // 2008-06-30
+      }
+     
+     $parts = _fourD_analysis_project_form_parts( $values );
+     // array_merge($form, $parts);
+     foreach($parts as $key=>$part){
+       $form[$key] = $part;
+       }
+     
+//      $form['analysis']['prereq']['#tree'] = TRUE;
+     }
+  
+  }
+}
+
+
+
+
+function fourD_analysis_show_projects( $args=array() ){
+//   fourD_analysis_debug('fourD_analysis_show_projects; $args: '. print_r($args, TRUE) );
+  
+  global $user;
+  $node_ids = array();
+  
+  
+  /* Show detailed analytics for a Project.
+   * - Display overall analysis summary; followed by each Individual users' analysis inputs on the Project
+   */
+  if( isset($args['nid']) && is_numeric($args['nid']) ){
+   $nid = $args['nid'];
+   $res = db_query('SELECT DISTINCT(uid) FROM {node_4dnetwork_analysis} WHERE nid = %d', $nid);
+   $user_ids = array();
+   while($u = db_fetch_array($res)) {
+     $user_ids[] = $u['uid'];
+     }
+   if( $user->uid != 0 && ! in_array($user->uid, $user_ids, TRUE) ){
+    $user_ids[] = $user->uid;
+    }
+   
+   $node = node_load( $nid );
+   
+   drupal_set_title(check_plain($node->title) . ' Analytics' );
+   //drupal_set_title(l(check_plain($node->title), 'node/'.$node->nid, array('title'=>'Return to: '.check_plain($node->title)) ) . ' Analytics' );
+   
+   drupal_set_breadcrumb( array(
+           l(t('Home'), 'node/'.$node->nid, array('title'=>t('Home')) ),
+           l(t('Projects'), 'project', array('title'=>t('Projects')) ),
+           l(check_plain($node->title), 'node/'.$node->nid, array('title'=>check_plain($node->title)) ),
+           t('Analytics')
+           ));
+   
+   $title = 'Community Analysis';
+   $out = _fourD_analysis_project_analysis_summary( array($nid), false, $title, false );
+   
+   $title = 'Individual User analysis';
+   // $out .= _old_fourD_analysis_project_analysis_summary_by_user( $nid, $user_ids, $title );
+   $out .= drupal_get_form('fourD_analysis_project_users_inputs_list_form', $nid, $user_ids);
+   
+   return $out;
+   }
+  
+  
+  /* List a Users' Projects.
+   * - Display an Individual User analysis inputs for each project they have personally analyzed
+   */
+  else if( isset($args['uid']) ){
+   $displayUser = user_load( array('uid'=>$args['uid']) );
+   if( !isset($displayUser->uid) || !$displayUser->uid ){
+    return drupal_not_found();
+    }
+   
+   if($user->uid == $args['uid']){
+    $res = db_query("SELECT a.nid FROM {node_4dnetwork_analysis} a WHERE a.uid = '%d'", $args['uid']);
+    }
+   else{
+    $res = db_query("SELECT a.nid FROM {node_4dnetwork_analysis} a LEFT JOIN {node_4dnetwork} o ON a.nid = o.oid WHERE a.uid = '%d' AND (o.oid IS NULL OR o.private = '0')", $args['uid']);
+    }
+   while($p = db_fetch_array($res)) {
+     $node_ids[] = $p['nid'];
+     }
+   
+   if( $node_ids && count($node_ids) ){
+//     $title = (isset($args['name'])) ? check_plain($args['name']) .'s\' ' : '';
+//     //$title .= 'Personal Project Analysis';
+//     $title .= ' Projects';
+    
+    $title = (($displayUser->uid == $user->uid) ? 'My ' : check_plain($displayUser->name) .'s '). t(' Projects');
+    drupal_set_title( $title );
+    
+    $out .= drupal_get_form('fourD_analysis_user_projects_inputs_list_summary_form', 0, $node_ids, $title . ' (community analysis)');
+
+    //if( $user->uid == $args['uid'] ){
+     //$title = (($displayUser->uid == $user->uid) ? 'My ' : check_plain($displayUser->name) .'s '). t(' personal analysis inputs');
+     $out .= drupal_get_form('fourD_analysis_user_projects_inputs_list_form', $args['uid'], $node_ids, $title . ' (personal analysis)');
+    // }
+    }
+   else{
+    if( $user->uid == $args['uid'] ){
+     $out = 'You have not input analysis for any Projects yet.';
+     }
+    else{
+     $out = ( (isset($args['name'])) ? check_plain($args['name']) : 'User') .' has not input analysis for any Projects yet.';
+     }
+    }
+   
+   return $out;
+   }
+  
+  
+  /* List all Projects in the system
+   * - Display all Projects and their summarized analysis inputs; sorted by final output Weighting.
+   */
+  else{
+   $res = db_query('SELECT DISTINCT(nid) FROM {node_4dnetwork_analysis}');
+   while($p = db_fetch_array($res)) {
+     $node_ids[] = $p['nid'];
+     }
+   $title = 'Project Analysis';
+   drupal_set_title( $title );
+   return _fourD_analysis_project_analysis_summary( $node_ids, false, $title, true, true );
+   }
+  
+//   drupal_set_title( $title );
+//   return _fourD_analysis_project_analysis_summary( $node_ids, $title );
+}
+
+
+
+// function _fourD_analysis_project_analysis_details( $nid, $user_ids ){
+// 
+//   $title = 'Overall Analysis';
+//   $out = _fourD_analysis_project_analysis_summary( array($nid), false, $title );
+// 
+// 
+//   $title = 'Analysis by User';
+// //   $node = node_load($args['nid']);
+// //    
+// //   $values = fourD_analysis_project_entry_get($node->nid, $uid);
+// //   $fields = _fourD_analysis_project_form_parts( $values );
+// //   
+// //   $out = drupal_get_form('fourD_analysis_project_analysis_inline_form', $node, false, false);
+//   $out .= _old_fourD_analysis_project_analysis_summary_by_user( $nid, $user_ids, $title );
+// 
+//   return $out;
+// }
+
+
+/**
+ * Add the Analysis Summary Info to the node view.
+ * - Each user has their own analysis inputs.
+ * - This table displays the averages from all user inputs.
+ */
+function _old_fourD_analysis_project_analysis_summary_by_user( $nid, $user_ids=array(), $title='Analysis by User' ){
+  // fourD_analysis_debug('analysis_summary_by_use; $nid: '.$nid.'; $usrs: '. print_r($user_ids, TRUE) );
+  
+  $header = array();
+  $header[] = array('data' => 'User');
+  $header[] = array('data' => 'Person Years');
+  $header[] = array('data' => 'Probability');
+  $header[] = array('data' => 'Rating');
+  $header[] = array('data' => 'Difference');
+  $header[] = array('data' => 'Ability');
+  $header[] = array('data' => 'Interest');
+  $header[] = array('data' => 'Deadline');
+//   $header[] = array('data' => 'Weight');
+  
+  
+  /*  Build the list of Goal Headers  */
+  $headerGoals = array();
+  $goals = _fourD_analysis_get_goal_nodes();
+  foreach( $goals as $gid=>$g ){
+    //fourD_analysis_debug('_fourD_analysis_add_user_analysis; goal: '.$key.'; analysis['.$key.']: '.$analysis[$key] );
+    $headerGoals[$gid] = array('data' => $g['title'], 'title' => 'Goal: '.$g['title'] );
+    }
+  
+  
+  /*  Build the list of Prerequisite Headers  */
+  $headerPrereqs = array();
+  $analcache = array();
+  foreach($user_ids as $i=>$uid){
+    $analysis = fourD_analysis_project_entry_get($nid, $uid);
+    if( $analysis && isset($analysis['probability']) ){
+     $analcache[$uid] = $analysis;
+     
+     if( isset($analysis['project_prereq']) ){
+      foreach( $analysis['project_prereq'] as $pid=>$pre ){
+        if( !isset($headerPrereqs[$pid]) ){
+         $headerPrereqs[$pid] = array('data' => $pre['title'], 'title' => 'Prerequisite: '.$pre['title'] );
+         }
+        }
+       }
+     
+     }
+    }
+   
+  $rows = array();
+  foreach($user_ids as $i=>$uid){
+    $analysis = $analcache[$uid];
+    if( $analysis && isset($analysis['probability']) ){
+     $usr = user_load( array('uid'=>$uid) );
+     
+     $row = array();
+     $row[] = array('data' => l(check_plain($usr->name), 'user/'.$uid.'/projects', array('class'=>'project-analytics-user', 'title'=>'View '.$usr->name.' Projects') ) );
+     
+     foreach( $goals as $gid=>$g ){
+//        $key = 'goal_'.$g['nid']; // Deprecated
+//        $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis[$key] ) ); // Deprecated
+//        //fourD_analysis_debug('_fourD_analysis_add_user_analysis; goal: '.$key.'; analysis['.$key.']: '.$analysis[$key] );
+       $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis['project_goal'][$gid]['rating'] ) );
+       //fourD_analysis_debug('_fourD_analysis_add_user_analysis; goal: analysis[project_goal]['.$g['nid'].']: '.$analysis['project_goal'][$g['nid']] );
+       }
+
+     foreach( $headerPrereqs as $pid=>$data ){
+       if( isset($analysis['project_prereq']) && isset($analysis['project_prereq'][$pid]) ){
+        $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis['project_prereq'][$pid]['rating'] ) );
+        }
+       else{
+        $row[] = array('data' => '-' );
+        }
+       }
+     
+     $personal = (!$uid) ? '' : 'personal_';
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis['person_years'] ) );
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis['probability'] ) );
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis[$personal.'rating'] ) );
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis[$personal.'difference'] ) );
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis[$personal.'ability'] ) );
+     $row[] = array('data' => _fourD_analysis_trim_decimal( $analysis[$personal.'interest'] ) );
+     $row[] = array('data' => date('Y-m-d', $analysis[$personal.'deadline']) );
+//      $row[] = array('data' => _fourD_analysis_trim_decimal( _fourD_analysis_calculate_project_weight($nid) ) );
+     
+     $rows[] = $row;
+     }
+    }
+  
+  /*  Add the extra Prerequisite Headers  */
+  $more = array_reverse($headerPrereqs, true);
+  foreach( $more as $pid=>$data ){
+    //array_unshift($header, $data);
+    array_splice($header, 1, 0, array($data));
+    }
+  
+  /*  Add the extra Goal Headers  */
+  $more = array_reverse($headerGoals, true);
+  foreach( $more as $gid=>$data ){
+    //array_unshift($header, $data);
+    array_splice($header, 1, 0, array($data));
+    }
+   
+  // fourD_analysis_debug('_fourD_analysis_add_user_analysis; sort: ' .$_GET['sort'] );
+  $sort = ($_GET['sort'] == 'asc') ? 'asc' : 'desc';
+  //$order_by = (isset($_GET['order']) && $_GET['order'] == 'Weight') ? $_GET['order'] : '6';
+  $order_by = count($header)-2;
+  $rows = fourD_analysis_columnSort($rows, array($order_by, $sort) );
+  
+  // return theme_table($header, $rows, array(), $title);
+  return theme('table', $header, $rows, array(), $title);
+  //fourD_analysis_debug('_fourD_analysis_add_user_analysis; $node->analysis: ' .$node->analysis );
+}
+
+
+
+
+?>

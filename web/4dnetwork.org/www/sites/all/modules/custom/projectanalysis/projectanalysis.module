@@ -1,0 +1,794 @@
+<?php
+
+/* $Id: project.css $ */
+
+/**
+ * @file
+ * provides a project analysis system to aid in the prioritization of
+ * projects in support of a strategy or aim(s). 
+ */
+
+/*********************************************
+ * helper functions
+ *********************************************/
+
+
+function calculate_project_weight($node) {
+
+ return ($node->del_goals * $node->interest
+  * $node->probability * $node->timeliness
+  * $node->advantage * $node->externality)
+  /($node->time * $node->money);
+
+}
+
+/*
+ * prints the username associated with a uid. useful if you want the
+ * username of a user who is not the current (logged in) user.
+ */
+function node_author_name($uid) {
+  $u['uid'] = $uid;
+  $the_user = user_load($u);
+  return $the_user->name;
+}
+
+
+/* 
+ * calculates the relative weight (priority) of a project for a given
+ * user based on all that user's projects. return that weight (ie, 1
+ * being the highest priority, 2 being the second highest, etc.).
+ * Note: this function only works for projects! do not pass it the nid
+ * of a non-project node, as it will just spit out errors.
+ */
+
+function user_relative_project_priority($nodeid, $userid) {
+  $q1 = db_query('SELECT nid FROM {node} WHERE
+  type="project" AND uid=%d', $userid); 
+  
+  $project_weights = array();
+  while ($o = db_fetch_object($q1)) {
+    $node = node_load($o->nid);
+    $project_weights[$node->nid] = $node->weighting;
+  }
+  
+  //sort the array in descending order (increasing priority)
+  arsort($project_weights);
+    
+  $i=1;
+  foreach($project_weights as $key => $value) {
+    $project_weights[$key] = $i++;
+  }
+
+  return $project_weights[$nodeid];
+}
+
+
+
+
+
+
+
+
+
+
+/*********************************************
+ * hooks
+ *********************************************/
+
+/**
+ * Implementation of hook_menu()
+ * this hook allows a menu item OR custom page to be registered with a 
+ * particular path (ie http://drupalpage.com/?q=mypage). 
+ * 'callback' specifies the function to call when this path is
+ * encountered. defining the 'type' as a MENU_CALLBACK allows you to
+ * register a callback but have it NOT show up in the menu. 
+ * for more on this function see the example at:
+ *
+ * http://api.drupal.org/api/file/developer/examples/page_example.module/5/source
+ * and the API description here:
+ * http://api.drupal.org/api/function/hook_menu/5. 
+ *
+ * Note: anything in the $may_cache block of code is typically only
+ * executed when a module is enabled/disabled, or if the cache is
+ * manually emotied. therefore, during development, anything you add
+ * to the if($may_cache) code will NOT show up unless you empty the
+ * cache. do this by using the devel module (dont forget to enable to
+ * devel block), and clicking on the 'empty cache' link.
+ */
+
+function projectanalysis_menu($may_cache) {
+ $items = array();
+
+ if($may_cache) {
+   $items[] = array(
+		    'path' => 'node/add/project',
+		    'title' => t('Project'),
+		    'access' => user_access('create project'),
+		    );
+
+   $items[] = array(
+		    'path' => 'projects', 
+		    'title'=> t('Project Listing'),
+		    'callback' => 'projectanalysis_project_listing',
+		    'access' => user_access('view list of all public
+		     projects'),
+		    'type' => MENU_CALLBACK);
+ }
+  
+ else {
+   //add the css for this module
+   //put it in !$may_cache so it's only added once for this module 
+   drupal_add_css(drupal_get_path('module', 'projectanalysis').'/project.css');
+ }
+ 
+ return $items;
+}
+
+
+
+/**
+ * Implementation of hook_node_info()
+ */
+
+function projectanalysis_node_info() {
+ // return an array since a module can define multiple node types
+ // (this is what the drupal book says!)
+ // we are defining one node type: project
+return array (
+  'project' => array (
+    'name' => t('Project'), //required
+    'module' => t('projectanalysis'), //required
+    'description' => t('Provides a project analysis system to aid in the
+  		        prioritization of projects in support of a
+		        strategy or aim.'), //required
+    'has_title' => TRUE,
+    'title_label' => t('Project Name'),
+    'has_body' => TRUE,
+    'body_label' => t('Project Description'),
+    'min_word_count' => 2,
+    'locked' => TRUE
+  )
+ );
+}
+
+
+
+
+/**
+ * Implementation of hook_enable().
+ *
+ * A node access module needs to force a rebuild of the node access
+ * table
+ * when it is enabled to ensure that things are set up.
+ */
+function projectanalysis_enable() {
+  node_access_rebuild();
+}
+
+/**
+ * Implementation of hook_disable().
+ *
+ * A node access module needs to force a rebuild of the node access
+ * table
+ * when it is disabled to ensure that its entries are removed from the
+ * table.
+ */
+function projectanalysis_disable() {
+  projectanalysis_disabling(TRUE);
+  node_access_rebuild();
+}
+
+/**
+ * Simple function to make sure we don't respond with grants when
+ * disabling
+ * ourselves.
+ */
+function projectanalysis_disabling($set = NULL) {
+  static $disabling = false;
+  if ($set !== NULL) {
+    $disabling = $set;
+  }
+  return $disabling;
+}
+
+
+/**
+ * Implementation of hook_perm()
+ */
+
+function projectanalysis_perm() {
+  return array('create project', 'edit own project', 'access private
+  projects', 'edit private projects', 'view list of all public
+  projects', 'view list of my projects');
+}
+
+/**
+ * Implementation of hook_access()
+ */
+
+function projectanalysis_access($op, $node) {
+  global $user;
+  
+  if ($op == 'create') {
+	return (user_access('create project'));
+  }
+
+  if ($op == 'update' || $op == 'delete') {
+	return (user_access('edit own project') && ($user->uid ==
+        $node->uid));
+  }
+}
+
+
+/**
+ * Implementation of hook_node_grants()
+ */
+
+/**
+ * **Documentation for this function taken from:
+ *   http://api.drupal.org/api/file/developer/examples/node_access_example.module/5/source
+ *
+ * Tell the node access system what GIDs the user belongs to for each
+ * realm.  We are providing two realms: the projects realm, which has
+ * just one group id (1) and the user is either a member or not
+ * depending upon the operation and the access permission set.
+ *
+ * We are also setting up a realm for the project author, though, to
+ * give it special privileges. That has 1 GID for every UID, and each
+ * user is automatically a member of the group where GID == UID.
+ *
+ */
+
+function projectanalysis_node_grants($account, $op) {
+  if ($op == 'view' && user_access('access private projects',
+				   $account)) {
+    $grants['projects'] = array(1);
+  }
+
+  if (($op == 'update' || $op == 'delete') && user_access('edit
+  private projects', $account)) {
+    $grants['projects'] = array(1);
+  }
+
+  $grants['project_author'] = array($account->uid);
+  return $grants;
+}
+
+/**
+ * Implementation of hook_node_access_records().
+ *
+ * **Documentation for this function taken from:
+ *   http://api.drupal.org/api/file/developer/examples/node_access_example.module/5/source
+ *
+ * All node access modules must implement this hook. If the module is
+ * interested in the privacy of the node passed in, return a list
+ * of node access values for each grant ID we offer. Since this
+ * example module only offers 1 grant ID, we will only ever be
+ * returning one record.
+ */
+
+function projectanalysis_node_access_records($node) {
+  if (projectanalysis_disabling()) {
+    return;
+  }
+
+  // We only care about the node if it's been marked private. If not,
+  // it is treated just like any other node and we completely ignore
+  // it.
+  if ($node->private) {
+    $grants = array();
+    $grants[] = array(
+		      'realm' => 'projects', 
+		      'gid' => TRUE, 
+		      'grant_view' => TRUE, 
+		      'grant_update' => FALSE, 
+		      'grant_delete' => FALSE,
+		      'priority' => 0,
+		      );
+
+    // For the project_author array, the GID is equivalent to a UID,
+    // which means there are many many groups of just 1 user.
+    $grants[] = array(
+		      'realm' => 'project_author', 
+		      'gid' => $node->uid, 
+		      'grant_view' => TRUE, 
+		      'grant_update' => TRUE, 
+		      'grant_delete' => TRUE,
+		      'priority' => 0,
+		      );
+    return $grants;
+  }
+}
+
+
+
+/**
+ * Implementation of hook_form()
+ */
+
+function projectanalysis_form($node) {
+
+  // get metadata for this node type
+  // defined in project_analysis_node_info()
+  $type = node_get_types('type', $node);
+
+
+  $form = array();
+
+  $form['title'] = array(
+    '#type' => 'textfield',
+    '#title' => check_plain($type->title_label),
+    '#required' => TRUE,
+    '#default_value' => $node->title,
+    '#weight' => 0
+  );
+
+  $form['private'] = array(
+   '#title' => t('Mark as Private?'), 
+   '#type' => 'checkbox',
+   '#description' => t('Check here if you want this project to be made visible only to
+   you. Note that, of course, no one can comment on your projects or
+   give you analysis feedback on them if you do this!'),
+   '#default_value' => $node->private,
+   );
+
+
+  //fieldset
+   $form['info'] = array(
+   	 '#title' => t('Project Information'),
+    '#type' => 'fieldset',
+    '#description' => t('Enter information about your project.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE
+  );
+
+  $form['info']['summary'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Short Project Summary'),
+    '#required' => TRUE,
+    '#maxlength' => 200,
+    '#size' => 150,
+    '#weight' => -1,
+    '#default_value' => $node->summary,
+    '#description' => t('This summary will be used in the project
+                        listings. Max 200 characters. Required'),
+   );
+
+  //note: we apply the filter format to the node description below
+  $form['info']['body_filter']['body'] = array(
+    '#type' => 'textarea',
+    '#title' => check_plain($type->body_label),
+    '#required' => TRUE,
+    '#rows' => 10,
+    '#weight' => 2,
+    '#default_value' => $node->body,
+    '#description' => t('Please fully describe your project here. Required'),
+   );
+
+  $form['body_filter']['filter'] = filter_form($node->format);
+
+
+  //fieldset
+   $form['analysis'] = array(
+    '#title' => t('Project Analysis'),
+    '#type' => 'fieldset',
+    '#description' => t('Enter values for the various parameters. Explore the impact of
+                         different values. Play around a get a feel for it.'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+
+  $form['analysis']['del_goals'] = array(
+    '#field_prefix' => t('&#916; Goals = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#width' => 4,
+    '#default_value' => $node->del_goals,
+    '#weight' => 3,
+   );
+
+  $form['analysis']['interest'] = array(
+    '#field_prefix' => t('Interest = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->interest,
+    '#weight' => 4,
+   );
+
+  $form['analysis']['probability'] = array(
+    '#field_prefix' => t('Probability of Success = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->probability,
+    '#weight' => 5,
+   );
+
+  $form['analysis']['timeliness'] = array(
+    '#field_prefix' => t('Timeliness = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->timeliness,
+    '#weight' => 6,
+   );
+
+  $form['analysis']['advantage'] = array(
+    '#field_prefix' => t('Comparative Advantage = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->advantage,
+    '#weight' => 7,
+   );
+
+  $form['analysis']['enabling'] = array(
+    '#field_prefix' => t('Enabling factor = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->enabling,
+    '#weight' => 8,
+   );
+
+  $form['analysis']['externality'] = array(
+    '#field_prefix' => t('Externalities = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->externality,
+    '#weight' => 9,
+   );
+
+  $form['analysis']['time'] = array(
+    '#field_prefix' => t('Time = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->time,
+    '#weight' => 10,
+   );
+
+  $form['analysis']['money'] = array(
+    '#field_prefix' => t('Money = '),
+    '#type' => 'textfield',
+    '#field_suffix' => t('[0.0,1.0]'),
+    '#size' => 4,
+    '#default_value'=> $node->money,
+    '#weight' => 11,
+   );
+
+  return $form;
+}
+
+/**
+ * Implementation of hook_validate
+ */
+
+function projectanalysis_validate($node) {
+ //node->project_name and node->description will be validated by drupal automatically. 
+
+ // we need to validate that a summary was entered, and that the
+ // analysis parameter values are sane (ie that they are decimals between
+ // 0 and 1, except the time and money parameters). 
+ 
+ if(!isset($node->summary)) {
+ 	form_set_error('summary', t('You must enter a project summary.'));
+ 	}	
+
+ if(isset($node->summary) && str_word_count($node->summary) > 200) {
+ 	form_set_error('summary', t('Your summary must be less than 200 words'));
+ 	}
+ 	
+
+	// too tired to validate parameter values now. add this as
+	// TODO. 
+
+}
+
+
+/**
+ * Implementation of hook_insert()
+ */
+
+function projectanalysis_insert($node) {
+
+$node->weighting = calculate_project_weight($node);
+
+db_query("INSERT INTO {projectanalysis} 
+	 (nid, vid, private, summary, del_goals,
+	  interest, probability, timeliness,
+	  advantage, externality, enabling, 
+	  time, money, weighting)
+	 VALUES 
+	  (%d, %d, %d, '%s', %f, %f, %f, %f, %f,
+	   %f, %f, %f, %f, %f)", 
+	 $node->nid,
+	 $node->vid,
+	 $node->private,
+	 $node->summary,
+	 $node->del_goals,
+	 $node->interest,
+	 $node->probability,
+	 $node->timeliness,
+	 $node->advantage,
+	 $node->externality,
+	 $node->enabling,
+	 $node->time,
+	 $node->money,
+	 $node->weighting);
+
+}
+
+/**
+ * Implementation of hook_update()
+ */
+
+function projectanalysis_update($node) {
+ 
+  // if revisions are turned on, then we create a new entire node each
+  // time the node is updated, in order to be able to revert to old 
+  // revisions. 
+
+  if($node->revision) {
+    projectanalysis_insert($node);
+  }
+
+  // if the revision flag is not set, then we just update the DB
+  // tables
+
+  else {
+
+    // update project weighting
+    $node->weighting = calculate_project_weight($node);
+
+    // update database
+    db_query("UPDATE {projectanalysis} SET
+	summary = '%s',
+        private = %f,
+	del_goals = %f,
+	interest = %f,
+	probability = %f,
+	timeliness = %f,
+	advantage = %f,
+	externality = %f,
+	enabling = %f,
+	time = %f,
+	money = %f,
+	weighting = %f
+
+	WHERE vid = %d",
+	     
+	     $node->summary,
+	     $node->private,
+	     $node->del_goals,
+	     $node->interest,
+	     $node->probability,
+	     $node->timeliness,
+	     $node->advantage,
+	     $node->externality,
+	     $node->enabling,
+	     $node->time,
+	     $node->money,
+	     $node->weighting,
+	     $node->vid);
+  }
+}
+
+/**
+ * Implementation of hook_delete()
+ */
+
+function projectanalysis_delete(&$node) {
+  
+  //delete DB information related to the node we are deleting
+  
+  db_query('DELETE FROM {projectanalysis} WHERE nid = %d',
+	   $node->nid);
+
+}
+
+/**
+ * Implementation of hook_load()
+ * this function loads the custom node attributes into the node 
+ * object when it's called. makes it available to other modules 
+ * and the theming layer. 
+ */
+
+function projectanalysis_load($node) {
+  return db_fetch_object(db_query
+         ('SELECT summary,private, del_goals,interest, probability, 
+          timeliness, advantage, externality, enabling, 
+	  time, money, weighting FROM {projectanalysis}
+          WHERE vid=%d', $node->vid));
+}
+
+/**
+ * Implementation of hook_view()
+ */
+
+function projectanalysis_view($node, $teaser=FALSE, $page=FALSE) {
+  if(!$teaser) {
+
+    //display privacy info
+    $node->content['privacy'] = 
+      array(
+	    '#value' =>theme('privacy_status', $node),
+	    '#weight' => -1
+	    );
+
+    //use drupal's default node view to display the title and body
+    $node = node_prepare($node, $teaser);
+
+  //load node content specific to this node-type
+    
+    //display the equation-related content
+    $node->content['equation'] = 
+      array(
+	    '#value' =>theme('project_equation', $node),
+	    '#weight' => 3
+	    );
+  }				      
+
+  if ($teaser) {
+    //use drupal's default teaser view
+    $node = node_prepare($node, $teaser);
+  }
+
+  return $node;
+}
+
+/**************************************
+ * projectanalysis custom view implementation
+ **************************************/
+
+/**
+ * Implementation of hook_help()
+ */
+
+function projectanalysis_help() {
+  switch ($section) {
+    case 'projects':
+      //insert help text here for the custom page:
+      return t('this is help text for the projects listing page');
+  }
+}
+
+/**
+ * Callback for project listing page 
+ * (url = http://site.com/?q=projects). 
+ * defined in projectanalysis_menu()
+ */
+
+function projectanalysis_project_listing() {
+
+  /*define table headers: (made up of an associative 
+   array of arrays) */ 
+
+  $header = array(array ('data' => 'Name',
+			 'field' => 'node.title'),	 
+		  array ('data' => 'Summary'),
+		  array ('data' => 'Author',
+			 'field' => 'users.name'),
+		  array ('data' => 'Submitted',
+			 'field' => 'node.created',
+			 'sort' => 'desc'),		  
+		  array ('data' => 'Last Updated',
+			 'field' => 'node.changed'),
+		  array ('data' => 'Relative Weighting for Author'));
+		   
+  
+  $query = pager_query('SELECT nid FROM {projectanalysis} WHERE
+  private="0"' . tablesort_sql($header), 20);
+
+
+
+  while ($record = db_fetch_object($query)) {
+    /*need to load entire node, not just contents of the
+     projectanalysis table, because some of the content for each node
+     is in the main node-type */
+    $node = node_load($record->nid);
+    $rows[] = array( array('data' => $node->title),
+		     array('data' => $node->summary),
+		     array('data' => (node_author_name($node->uid))),
+		     array('data' => format_date($node->created,
+						 'custom', 'd/m/Y')),
+		     array('data' => format_date($node->changed,
+						 'custom', 'd/m/Y')), 
+		     array('data' =>
+			   user_relative_project_priority($node->nid,
+							  $node->uid)));
+    
+  }
+
+  $output = theme_table($header, $rows);
+
+    return $output;
+}
+  
+  /*
+  while ($o = db_fetch_object($query)) {   
+    $node = node_load($o->nid);
+    $output .= 
+      '<tr>
+          <td>' . l($node->title, 'node/'.$node->nid) . '</a></td>
+          <td>' . $node->summary . '</td>
+          <td>' . l(node_author_name($node->uid), 'user/'.$node->uid) . '</td>
+          <td>' . format_date($node->created, 'custom', 'd/m/Y') . '</td>
+          <td>' . format_date($node->changed, 'custom', 'd/m/Y') . '</td>
+          <td>' . user_relative_project_priority($node->nid, $node->uid) . '</td>
+      </tr>';
+  }
+
+  */
+
+  //$output .= '</table>';
+  //  theme('pager');  
+
+  
+
+/**************************************
+ * projectanalysis theming implementation
+ **************************************/
+
+function theme_project_summary($node) {
+  $output = '<div class="project_summary"><h2>Project
+  Summary</h2><br>'. 
+    check_plain($node->summary). '</div><br />';
+
+  return $output;
+}
+
+function theme_privacy_status($node) {
+  global $user;
+
+  if($node->private) {
+    $output = '<div class="private_project">This project has been
+  marked private. Only ' . $user->name . ' can see it!</div><br>';
+  }
+
+  else $output = '<div class="public_project">This project is public</div><br>';
+
+  return $output;
+}
+
+
+function theme_project_equation($node) {
+  $output = '<div class="project_equation">
+    <br><h2>Project Analysis</h2>
+    <p><i><b>Equation:</b> Weight = (&#916 Goals * Interest * Probability * Timeliness *
+       Advantage * Externality * Enabling) / (Time * Resources) <br>
+    <small>Read more about the project analysis equation <a
+  href="?q=equation">here</a></small>
+    </i></p>
+    <p id="analysis_equation"><b>
+    <font id="weighting">'.
+    check_plain($node->weighting) . 
+    '</font> = ( <font id="del_goals">'.
+    check_plain($node->del_goals) .
+    '</font> * <font id="interest">'.
+    check_plain($node->interest) . 
+    '</font> * <font id="probability">'.
+    check_plain($node->probability) .
+    '</font> * <font id="timeliness">'.
+    check_plain($node->timeliness) .
+    '</font> * <font id="advantage">'.
+    check_plain($node->advantage) .
+    '</font> * <font id="externality">'.
+    check_plain($node->externality) .
+    '</font> * <font id="enabling">'.
+    check_plain($node->enabling) . 
+    '</font> ) / ( <font id="time">' .
+    check_plain($node->time) . 
+    '</font> * <font id="money">'.
+    check_plain($node->money) . 
+    '</font>) 
+    </b></p></div><br>';
+
+  return $output;
+
+}
+
+?>

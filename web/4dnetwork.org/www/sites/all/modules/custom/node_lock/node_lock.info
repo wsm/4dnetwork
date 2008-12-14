@@ -1,0 +1,9 @@
+; $Id: node_lock.info,v 1.0 2008/04/07 16:05:52 StickyTouch.com Exp $
+name = "Node Lock"
+description = "This module provides node locking."
+version = "5.x-1.x-dev"
+;dependencies = 
+
+package = "Node"
+project = "node_lock"
+datestamp = "1207598733"

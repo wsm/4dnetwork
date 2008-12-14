@@ -1,0 +1,270 @@
+<?php
+/* $Id: taxonomy_node.module,v 1.0 2008/04/04 15:35:37 StickyTouch.com Exp $ */
+/**
+ * @file
+ *
+ * This module provides dedicated nodes for Taxonomy Terms.
+ */
+
+ include_once(drupal_get_path('module', 'taxonomy_node') .'/taxonomy_node-block.inc');
+ include_once(drupal_get_path('module', 'taxonomy_node') .'/taxonomy_node-content.inc');
+ 
+ // ----- Admin Utils ---- //
+function taxonomy_node_is_admin() {
+  global $user;
+  return ($user->uid == 1);
+}
+
+function taxonomy_node_debug($msg) {
+  if( taxonomy_node_is_admin() ){
+   drupal_set_message($msg);
+   }
+}
+ 
+
+/**
+ * Implementation of hook_menu()
+ */
+function taxonomy_node_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+    /* -------------------------- admin menu item ---------------------- */
+    $items[] = array(
+      'access'             => user_access('administer content types'),
+      'callback'           => 'drupal_get_form',
+      'callback arguments' => array('taxonomy_node_settings'),
+      'description'        => t('Configure Taxonomy Node options.'),
+      'path'               => 'admin/settings/taxonomy_node',
+      'title'              => t('Taxonomy Nodes'),
+    );
+   }
+  else{
+   // This works by assigning a more precise url/path than taxonomy module does.
+   $items[] = array(
+         'path' => 'taxonomy/term/'.arg(2),
+         'title' => 'Taxonomy node',
+         'access' => user_access('access taxonomy nodes'),
+         'callback' => '_taxonomy_node_view_term_node',
+         'callback arguments' => array(arg(2)),
+         'type' => MENU_CALLBACK
+         );
+   }
+  
+  return $items;
+}
+
+
+/**
+ * Configures the various taxonomy_node options; system_settings_form().
+ */
+function taxonomy_node_settings() {
+  $form = array();
+  
+  $form['taxonomy_node_general']['taxonomy_node_vocabs'] = array(
+    '#type'          => 'checkboxes',
+    '#multiple'      => true,
+    '#required'      => true,
+    '#options'       => _taxonomy_node_get_vocab_select_options(),
+    '#default_value' => _taxonomy_node_get_enabled_vocabs(),
+    '#title'         => t('Taxonomy Node Vocabularies'),
+    '#description'   => t('Select the Vocabularies that can have Term Nodes.'),
+  );
+  
+//   $form['taxonomy_node_general']['taxonomy_node_types'] = array(
+//     '#type'          => 'checkboxes',
+//     '#multiple'      => true,
+//     '#required'      => true,
+//     '#options'       => node_get_types('names'),
+//     '#default_value' => _taxonomy_node_get_content_types(),
+//     '#title'         => t('Taxonomy Node node types'),
+//     '#description'   => t('Select the node types that will be considered Pages for terms in the Vocabulary.  Generally you would only select one type here.'),
+//   );
+
+  return system_settings_form($form);
+}
+
+function _taxonomy_node_get_vocab_select_options(){
+  $ret = array();
+  $vocabs = taxonomy_get_vocabularies();
+  foreach ($vocabs as $vocab) {
+    $ret[$vocab->vid] = check_plain($vocab->name);
+    }
+  return $ret;
+}
+
+
+
+
+
+
+ /* ------------------------------------------------------------- */
+
+/**
+ * Is the given $type assigned to be a "Term Nodes" Content type
+ * - ie: summary page provided for each term in the taxonomy.
+ */
+function _taxonomy_node_is_content_type($type) {
+  return in_array($type, _taxonomy_node_get_content_types(), TRUE);
+}
+
+/**
+ * Gets a list of node types configured as "Term Nodes".
+ * That is, each term in the vocabulary can have a page.
+ */
+function _taxonomy_node_get_content_types(){
+  static $tn_types;
+  if(!$tn_types){
+   $tn_types = array();
+   $types = variable_get('taxonomy_node_types', array('term_node'=>'term_node'));
+   if($types){
+    foreach($types as $type => $ison){
+      if( $ison ) {
+       $tn_types[] = $ison;
+       }
+      }
+    }
+   }
+  return $tn_types;
+}
+
+
+
+
+
+/**
+ * Are "Term Nodes" enabled on this vocabulary?
+ */
+function _taxonomy_node_is_vocab_enabled($vid){
+  return in_array($vid, _taxonomy_node_get_enabled_vocabs(), FALSE);
+}
+
+
+/**
+ * Returns a list of vocabulary ids that have "Term Nodes" enabled.
+ */
+function _taxonomy_node_get_enabled_vocabs() {
+  static $vids;
+  if(!$vids){
+   $vid = variable_get('taxonomy_node_vocabs', array());
+   if( !empty($vid) ){
+    foreach($vid as $v => $ison){
+      if( $ison ) {
+       $vids[] = $ison;
+       }
+      }
+     }
+   }
+  return $vids;
+}
+
+
+
+ /**
+  * Load the "Term Nodes" for a Term ID
+  */
+function _taxonomy_node_get_term_nodes($termid, $full_load=true){
+  $nodes = array();
+  $res = db_query('SELECT node_id as sid FROM {taxonomy_node} WHERE term_id = %d', $termid);
+  while($node = db_fetch_object($res)) {
+    $nodes[] = ($full_load) ? node_load($node->sid) : $node;
+    }
+  return $nodes;
+}
+
+ /**
+  * Load the "Term Node IDs" for a Term ID
+  */
+function _taxonomy_node_get_term_node_ids($termid){
+  $nids = array();
+  $res = db_query('SELECT node_id FROM {taxonomy_node} WHERE term_id = %d', $termid);
+  while($node = db_fetch_object($res)) {
+    $nids[] = $node->node_id;
+    }
+  return $nids;
+}
+
+
+
+ /**
+  * Load the Taxonomy Term which the given "Node ID" is attached to
+  */
+function _taxonomy_node_get_tid_for_nid($nid){
+  $term = _taxonomy_node_get_term_for_nid($nid);
+  return ($term && $term->tid ) ? $term->tid : 0;
+}
+
+function _taxonomy_node_get_term_for_nid($nid){
+   $ret = 0;
+   $term = db_fetch_object( db_query("SELECT term_id FROM {taxonomy_node} WHERE node_id = %d", $nid) );
+   if($term->term_id) {
+    $ret = taxonomy_get_term($term->term_id);
+    }
+  return $ret;
+}
+
+ /**
+  * Load the Taxonomy Term which the given "Term Node" is attached to
+  */
+function _taxonomy_node_get_term_for_node($node){
+  if( _taxonomy_node_is_content_type($node->type) ) {
+   $term = _taxonomy_node_get_term_for_nid($node->nid);
+   if($term && $term->tid) {
+    $node->taxonomy_node_term = $term;
+    }
+   }
+  return $node->taxonomy_node_term;
+}
+
+
+
+
+
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function taxonomy_node_form_alter($form_id, &$form) {
+  if( isset($form['#id']) && $form['#id'] == 'node-form' && isset($form['type']['#value']) ) {
+    if( _taxonomy_node_is_content_type( $form['type']['#value'] ) ) {
+     /* --- Integrate hierarchical_select ajax interface --- */
+    _taxonomy_node_add_hierarchical_select($form_id, $form);
+    }
+  }
+}
+
+/**
+ * Add a hierarchical_select box to the form, if it's installed and enabled on the vocabs.
+ */
+function _taxonomy_node_add_hierarchical_select($form_id, &$form) {
+  
+  if( module_exists('hierarchical_select') ){
+   // Change the term selection of nodes. Only affects hierarchical vocabularies.
+   if( isset($form['type']) && $form['type']['#value'] .'_node_form' == $form_id && is_array($form['taxonomy_parent']) ) {
+    foreach ($form['taxonomy_parent'] as $vid => $form_item) {
+      // Only apply Hierarchical Select if it's enabled for this vocabulary.
+      if( variable_get("hierarchical_select_status_$vid", FALSE) ) {
+       $vocabulary = taxonomy_get_vocabulary($vid);
+
+       // Hierarchical Select only makes sense if there's a hierarchy.
+       if( $vocabulary->hierarchy > 0 ) {
+        $form['taxonomy_parent'][$vid]['#type'] = 'hierarchical_select';
+        $form['taxonomy_parent'][$vid]['#hierarchical_select_settings'] = array(
+            'module' => 'taxonomy',
+            'params' => array(
+            'vid' => $vid,
+            ),
+          );
+        taxonomy_hierarchical_select_update_form_item($form['taxonomy_parent'][$vid], $vid);
+        $form['taxonomy_parent'][$vid]['#multiple'] = false;
+        $form['taxonomy_parent'][$vid]['#hierarchical_select_settings']['dropbox_limit'] = 1;
+        $form['taxonomy_parent'][$vid]['#hierarchical_select_settings']['dropbox_title'] = $vocabulary->name . ' Parent';
+        //taxonomy_node_debug(' after add_hierarchical_select: '.print_r($form, TRUE));
+        }
+       }
+      }
+    }
+   }
+}
+
+
+

@@ -1,0 +1,9 @@
+; $Id: taxonomy_node.info,v 1.0 2008/04/04 15:35:37 StickyTouch.com Exp $
+name = "Taxonomy Nodes"
+description = "This module provides dedicated nodes for Taxonomy Terms."
+version = "5.x-1.x-dev"
+dependencies = taxonomy
+
+package = "Taxonomy"
+project = "taxonomy_node"
+datestamp = "1207337737"

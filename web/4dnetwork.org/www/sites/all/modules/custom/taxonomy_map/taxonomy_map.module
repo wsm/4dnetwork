@@ -1,0 +1,72 @@
+<?php
+/* $Id: taxonomy_map.module,v 1.0 2008/03/08 06:37:27 stickytouch.com Exp $ */
+
+/**
+ * This module provides a collapsible taxonomy map
+ */
+
+ include_once(drupal_get_path('module', 'taxonomy_map') .'/taxonomy_map-taxonomy.inc');
+ 
+ // ----- Utils ---- //
+function taxonomy_map_is_admin() {
+  global $user;
+  return ($user->uid == 1);
+}
+
+function taxonomy_map_debug($msg) {
+  if( taxonomy_map_is_admin() ){
+   drupal_set_message($msg);
+   }
+}
+ // ----- Utils ---- //
+
+
+
+/**
+ * Implementation of hook_menu()
+ */
+function taxonomy_map_menu($may_cache) {
+  $items = array();
+  if ($may_cache) {
+   }
+  else{
+    /* -------------------------- site-maps menu items ---------------------- */
+   $items[] = array(
+         'path' => 'site-map',
+         'title' => t(variable_get('site_name', 'Drupal') . ' Site Map'),
+         'access' => user_access('access taxonomy map'),
+         'callback' => '_taxonomy_map_get',
+         'callback arguments' => array('page', 'site',
+                       array('vids'=>arg(1),'node-titles'=>TRUE,'collapsible'=>TRUE)
+                       ),
+         'type' => MENU_CALLBACK
+         );
+   $items[] = array(
+         'path' => 'rss-map',
+         'title' => t(variable_get('site_name', 'Drupal') . ' RSS Map'),
+         'access' => user_access('access taxonomy map'),
+         'callback' => '_taxonomy_map_get',
+         'callback arguments' => array('page', 'rss',
+                       array('vids'=>arg(1),'breadcrumb'=>'RSS Map','node-titles'=>FALSE,'collapsible'=>TRUE)
+                       ),
+         'type' => MENU_CALLBACK
+         );
+   }
+  
+  return $items;
+}
+
+
+
+/**
+ * Implementation of hook_perm().
+ */
+function taxonomy_map_perm() {
+  return array('access taxonomy map');
+}
+
+
+
+
+
+

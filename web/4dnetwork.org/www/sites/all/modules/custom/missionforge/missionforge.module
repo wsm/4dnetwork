@@ -1,0 +1,151 @@
+<?php
+
+/**
+* Display help and module information
+* @param section which section of the site we're displaying help 
+* @return help text for section
+*/
+function missionforge_help($section='') {
+	$output = '';
+	switch ($section) {
+	case "admin/help#missionforge":
+		$output = '<p>'.  t("Shows crowd-sourcing appeals from Mission Forge"). '</p>';
+		break;
+	}
+	return $output;
+} // function missionforge_help
+
+/**
+* Valid permissions for this module
+* @return array An array of valid permissions for the missionforge module
+*/
+
+function missionforge_perm() {
+	return array('access missionforge content');
+} // function missionforge_perm
+
+function missionforge_admin() {
+	$form['missionforge_xmlurl'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Web Service URL'),
+		'#default_value' => variable_get('missionforge_xmlurl', ''),
+		'#size' => 25,
+		'#maxlength' => 100,
+		'#description' => t("The web service URL provided by Mission Forge.")
+	);
+	$form['missionforge_maxlinks'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Maximum number of appeals'),
+		'#default_value' => variable_get('missionforge_maxlinks', 3),
+		'#size' => 2,
+		'#maxlength' => 2,
+		'#description' => t("The maximum number of links to display in the block.")
+	);
+	$form['missionforge_title'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Title on detail page'),
+		'#default_value' => variable_get('missionforge_title', 'Help Wanted!'),
+		'#size' => 25,
+		'#maxlength' => 100,
+		'#description' => t("The title to show for the detail page (also the block by default).")
+	);
+	$form['missionforge_detailtext'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Text for block link'),
+		'#default_value' => variable_get('missionforge_detailtext', 'more'),
+		'#size' => 10,
+		'#maxlength' => 40,
+		'#description' => t("The text of the link shown below the block content linking to the detail page.")
+	);
+	return system_settings_form($form);
+} // function missionforge_admin
+
+function missionforge_all() {
+	$static = '<hr /><span  style="float:right;padding-left:5px;"><a href="http://missionforge.net/"><img src="http://missionforge.net/images/mission-forge.gif" alt="Mission Forge"></a></span>We are seeking volunteers to help with the following tasks.  To express your interest in one of these tasks, please follow the link to the <a href="http://missionforge.net/">Mission Forge</a> project management site. You may need to <a href="http://missionforge.net/forge/register.php">create a user account</a> at Mission Forge to gain full access to these tasks. <br />';
+	$xml_url = variable_get('missionforge_xmlurl', '');
+	if (!$xml_url) {
+		return $static.t('You must configure a web service URL for this module to function.');
+	}
+	$page_content = $static;
+	$appeals_xml = @simplexml_load_file($xml_url);
+	if ($appeals_xml) {
+		foreach ($appeals_xml->appeal as $appeal) {
+			$page_content .= '<h4>'.l($appeal['task'], 'http://missionforge.net/forge/task_response.php?task_appeal_id='.$appeal['id']).'</h4>';
+			$page_content .= '<div><i><small>'.$appeal['project'].'</small></i></div>';
+			$page_content .= '<p>'.$appeal['description'].'</p>';
+		}
+	}
+	if ($page_content == $static) {
+		$page_content .= "No task appeals are active.";
+	}
+	return $page_content;
+} // function missionforge_all
+
+function missionforge_block($op='list', $delta=0) {
+	if ($op == "list") {
+		$block[0]["info"] = t("Mission Forge");
+		return $block;
+	} else if ($op == 'view') {
+		$xml_url = variable_get('missionforge_xmlurl', '');
+		if (!$xml_url) {
+			$block['subject'] = variable_get('missionforge_title', 'Mission Forge');
+			$block['content'] = t('You must configure a web services URL for this module to function.');
+			return $block;
+		}
+		$block_content = '';
+		$limitnum = variable_get("missionforge_maxlinks", 3);
+		$appeals_xml = @simplexml_load_file($xml_url);
+		if ($appeals_xml) {
+			$iteration = 0;
+			foreach ($appeals_xml->appeal as $appeal) {
+				if ($iteration++ < $limitnum) {
+					$block_content .= '<li>'.l($appeal['task'], 'http://missionforge.net/forge/task_response.php?task_appeal_id='.$appeal['id']).'</li>';
+				}
+			}
+			if ($block_content == '') {
+				return;
+			}
+			$block_content = '<div class="content"><div class="item-list"><ul>'.$block_content;
+			$block_content .= '</ul></div></div>';
+			$block_content .=
+				"<div class=\"more-link\">".
+				l(
+					t(variable_get('missionforge_detailtext', 'more')),
+					"missionforge",
+					array(
+						"title" => t("Additional detail")
+					)
+				)."</div>";
+			$block['subject'] = variable_get('missionforge_title', 'Help Wanted!');
+			$block['content'] = $block_content;
+			return $block;
+		} else {
+			$block['subject'] = variable_get('missionforge_title', 'Mission Forge');
+			$block['content'] = t('Could not retrieve task appeals.');
+			return $block;
+		}
+	}
+} // function missionforge_block
+
+function missionforge_menu() {
+	$items = array();
+	$items[] = array(
+		'path' => 'missionforge',
+		'title' => t(variable_get('missionforge_title', 'Help Wanted!')),
+		'callback' => 'missionforge_all',
+		'access' => user_access('access missionforge content'),
+		'type' => MENU_CALLBACK
+	);
+	$items[] = array(
+		'path' => 'admin/settings/missionforge',
+		'title' => t('Mission Forge'),
+		'description' => t('Configure the Mission Forge module.'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('missionforge_admin'),
+		'access' => user_access('administer site configuration'),
+		'type' => MENU_NORMAL_ITEM
+	);
+	return $items;
+} // function missionforge_menu
+
+

@@ -1,0 +1,105 @@
+<?php
+/* fourD_analysis.install,v 1.0 2008/05/09 15:17:33 StickyTouch.com Exp $ */
+
+function fourD_analysis_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+	db_query("CREATE TABLE {node_4dnetwork_analysis} (
+	  aid int unsigned NOT NULL auto_increment,
+	  nid int unsigned NOT NULL default '0',
+	  uid int unsigned NOT NULL default '0',
+	
+	  assess_ability double default '0.0',
+	  person_years double default '0.0',
+	  probability double default '0.0',
+	  communal_difference double default '0.0',
+	  communal_ability double default '0.0',
+	  communal_interest double default '0.0',
+	  personal_difference double default '0.0',
+	  personal_ability double default '0.0',
+	  personal_interest double default '0.0',
+	  personal_deadline int unsigned NOT NULL default '0',
+	
+	  PRIMARY KEY (aid),
+	  KEY nid(nid),
+	  KEY uid(uid)
+        ) ");
+
+	db_query("CREATE TABLE {node_4dnetwork_analysis_rating} (
+	  rid int unsigned NOT NULL auto_increment,
+	  nid int unsigned NOT NULL default '0',
+	  uid int unsigned NOT NULL default '0',
+	  goalid int unsigned NOT NULL default '0',
+	  type enum('goal', 'project_goal', 'project_prereq') NOT NULL default 'goal',
+	  rating double default '0.0',
+	  PRIMARY KEY (rid),
+	  KEY nid(nid),
+	  KEY uid(uid),
+	  KEY goalid(goalid),
+	  KEY type(type)
+        ) ");
+      break;
+  }
+}
+
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function fourD_analysis_uninstall() {
+	db_query("DROP TABLE {node_4dnetwork_analysis}");
+	db_query("DROP TABLE {node_4dnetwork_analysis_rating}");
+}
+
+
+
+function fourD_analysis_install_old() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysqli':
+    case 'mysql':
+	db_query("CREATE TABLE {node_4dnetwork_analysis} (
+	  aid int unsigned NOT NULL auto_increment,
+	  nid int unsigned NOT NULL default '0',
+	  uid int unsigned NOT NULL default '0',
+	  global_weighting double,
+	  del_goals double default '0.0',
+	  interest double default '0.0',
+  	  probability double default '0.0',
+	  timeliness double default '0.0',
+	  advantage double default '0.0',
+	  externality double default '0.0',
+	  enabling double default '0.0',
+	  time double default '0.0',
+	  money double default '0.0',
+	  weighting double default '0.0',
+	  PRIMARY KEY (aid),
+	  KEY nid(nid),
+	  KEY uid(uid)
+        ) ");
+      break;
+    case 'pgsql': // TODO: can someone check this PostgreSQL query?
+	db_query("CREATE TABLE {node_4dnetwork_analysis} (
+	  aid int unsigned NOT NULL auto_increment,
+	  nid int unsigned NOT NULL default '0',
+	  uid int unsigned NOT NULL default '0',
+	  global_weighting double,
+	  del_goals double default '0.0',
+	  interest double default '0.0',
+  	  probability double default '0.0',
+	  timeliness double default '0.0',
+	  advantage double default '0.0',
+	  externality double default '0.0',
+	  enabling double default '0.0',
+	  time double default '0.0',
+	  money double default '0.0',
+	  weighting double default '0.0',
+	  PRIMARY KEY (aid),
+	  KEY nid(nid),
+	  KEY uid(uid)
+        ) ");
+      break;
+  }
+}
+
+

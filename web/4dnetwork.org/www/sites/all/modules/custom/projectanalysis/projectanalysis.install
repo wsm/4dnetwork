@@ -1,0 +1,43 @@
+<?php
+//$Id$
+
+/**
+ * Implementation of hook_install()
+ */
+
+function projectanalysis_install() {
+  switch ($GLOBALS['db_type']) {
+    case 'mysql':
+    case 'mysqli':
+	db_query("CREATE TABLE {projectanalysis} (
+	  nid int unsigned NOT NULL default '0',
+	  vid int unsigned NOT NULL default '0',
+	  summary varchar(255),
+	  global_weighting double,
+	  del_goals double default '0.0',
+	  interest double default '0.0',
+  	  probability double default '0.0',
+	  timeliness double default '0.0',
+	  advantage double default '0.0',
+	  externality double default '0.0',
+	  enabling double default '0.0',
+	  time double default '0.0',
+	  money double default '0.0',
+	  weighting double default '0.0',
+	  PRIMARY KEY (nid, vid),
+	  UNIQUE KEY vid(vid),
+	  KEY nid(nid)
+        ) ");
+     break;
+  }
+}
+
+/**
+ * Implementation of hook_uninstall()
+ */
+
+function projectanalysis_uninstall() {
+  db_query('DROP TABLE {projectanalysis}');
+}
+
+  
